@@ -1,8 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2013 by Andes Technology                                *
  *   Hsiangkai Wang <hkwang@andestech.com>                                 *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -16,35 +27,33 @@
 #include <target/target.h>
 #include <jtag/aice/aice_interface.h>
 #include <jtag/aice/aice_transport.h>
-#include <string.h>
 
 /* */
-static int jim_newtap_expected_id(struct jim_nvp *n, struct jim_getopt_info *goi,
-		struct jtag_tap *tap)
+static int jim_newtap_expected_id(Jim_Nvp *n, Jim_GetOptInfo *goi,
+		struct jtag_tap *pTap)
 {
 	jim_wide w;
-	int e = jim_getopt_wide(goi, &w);
+	int e = Jim_GetOpt_Wide(goi, &w);
 	if (e != JIM_OK) {
 		Jim_SetResultFormatted(goi->interp, "option: %s bad parameter",
 				n->name);
 		return e;
 	}
 
-	unsigned expected_len = sizeof(uint32_t) * tap->expected_ids_cnt;
+	unsigned expected_len = sizeof(uint32_t) * pTap->expected_ids_cnt;
 	uint32_t *new_expected_ids = malloc(expected_len + sizeof(uint32_t));
-	if (!new_expected_ids) {
+	if (new_expected_ids == NULL) {
 		Jim_SetResultFormatted(goi->interp, "no memory");
 		return JIM_ERR;
 	}
 
-	assert(tap->expected_ids);
-	memcpy(new_expected_ids, tap->expected_ids, expected_len);
+	memcpy(new_expected_ids, pTap->expected_ids, expected_len);
 
-	new_expected_ids[tap->expected_ids_cnt] = w;
+	new_expected_ids[pTap->expected_ids_cnt] = w;
 
-	free(tap->expected_ids);
-	tap->expected_ids = new_expected_ids;
-	tap->expected_ids_cnt++;
+	free(pTap->expected_ids);
+	pTap->expected_ids = new_expected_ids;
+	pTap->expected_ids_cnt++;
 
 	return JIM_OK;
 }
@@ -52,20 +61,20 @@ static int jim_newtap_expected_id(struct jim_nvp *n, struct jim_getopt_info *goi
 #define NTAP_OPT_EXPECTED_ID 0
 
 /* */
-static int jim_aice_newtap_cmd(struct jim_getopt_info *goi)
+static int jim_aice_newtap_cmd(Jim_GetOptInfo *goi)
 {
-	struct jtag_tap *tap;
+	struct jtag_tap *pTap;
 	int x;
 	int e;
-	struct jim_nvp *n;
+	Jim_Nvp *n;
 	char *cp;
-	const struct jim_nvp opts[] = {
+	const Jim_Nvp opts[] = {
 		{.name = "-expected-id", .value = NTAP_OPT_EXPECTED_ID},
 		{.name = NULL, .value = -1},
 	};
 
-	tap = calloc(1, sizeof(struct jtag_tap));
-	if (!tap) {
+	pTap = calloc(1, sizeof(struct jtag_tap));
+	if (!pTap) {
 		Jim_SetResultFormatted(goi->interp, "no memory");
 		return JIM_ERR;
 	}
@@ -76,41 +85,41 @@ static int jim_aice_newtap_cmd(struct jim_getopt_info *goi)
 	if (goi->argc < 3) {
 		Jim_SetResultFormatted(goi->interp,
 				"Missing CHIP TAP OPTIONS ....");
-		free(tap);
+		free(pTap);
 		return JIM_ERR;
 	}
 
 	const char *tmp;
-	jim_getopt_string(goi, &tmp, NULL);
-	tap->chip = strdup(tmp);
+	Jim_GetOpt_String(goi, &tmp, NULL);
+	pTap->chip = strdup(tmp);
 
-	jim_getopt_string(goi, &tmp, NULL);
-	tap->tapname = strdup(tmp);
+	Jim_GetOpt_String(goi, &tmp, NULL);
+	pTap->tapname = strdup(tmp);
 
 	/* name + dot + name + null */
-	x = strlen(tap->chip) + 1 + strlen(tap->tapname) + 1;
+	x = strlen(pTap->chip) + 1 + strlen(pTap->tapname) + 1;
 	cp = malloc(x);
-	sprintf(cp, "%s.%s", tap->chip, tap->tapname);
-	tap->dotted_name = cp;
+	sprintf(cp, "%s.%s", pTap->chip, pTap->tapname);
+	pTap->dotted_name = cp;
 
 	LOG_DEBUG("Creating New Tap, Chip: %s, Tap: %s, Dotted: %s, %d params",
-			tap->chip, tap->tapname, tap->dotted_name, goi->argc);
+			pTap->chip, pTap->tapname, pTap->dotted_name, goi->argc);
 
 	while (goi->argc) {
-		e = jim_getopt_nvp(goi, opts, &n);
+		e = Jim_GetOpt_Nvp(goi, opts, &n);
 		if (e != JIM_OK) {
-			jim_getopt_nvp_unknown(goi, opts, 0);
+			Jim_GetOpt_NvpUnknown(goi, opts, 0);
 			free(cp);
-			free(tap);
+			free(pTap);
 			return e;
 		}
 		LOG_DEBUG("Processing option: %s", n->name);
 		switch (n->value) {
 			case NTAP_OPT_EXPECTED_ID:
-				e = jim_newtap_expected_id(n, goi, tap);
-				if (e != JIM_OK) {
+				e = jim_newtap_expected_id(n, goi, pTap);
+				if (JIM_OK != e) {
 					free(cp);
-					free(tap);
+					free(pTap);
 					return e;
 				}
 				break;
@@ -118,17 +127,17 @@ static int jim_aice_newtap_cmd(struct jim_getopt_info *goi)
 	}			/* while (goi->argc) */
 
 	/* default is enabled-after-reset */
-	tap->enabled = !tap->disabled_after_reset;
+	pTap->enabled = !pTap->disabled_after_reset;
 
-	jtag_tap_init(tap);
+	jtag_tap_init(pTap);
 	return JIM_OK;
 }
 
 /* */
 static int jim_aice_newtap(Jim_Interp *interp, int argc, Jim_Obj * const *argv)
 {
-	struct jim_getopt_info goi;
-	jim_getopt_setup(&goi, interp, argc - 1, argv + 1);
+	Jim_GetOptInfo goi;
+	Jim_GetOpt_Setup(&goi, interp, argc - 1, argv + 1);
 	return jim_aice_newtap_cmd(&goi);
 }
 
@@ -156,15 +165,15 @@ COMMAND_HANDLER(handle_scan_chain_command)
 
 	aice_scan_jtag_chain();
 	tap = jtag_all_taps();
-	command_print(CMD,
+	command_print(CMD_CTX,
 		"   TapName             Enabled  IdCode     Expected   IrLen IrCap IrMask");
-	command_print(CMD,
+	command_print(CMD_CTX,
 		"-- ------------------- -------- ---------- ---------- ----- ----- ------");
 
 	while (tap) {
 		uint32_t expected, expected_mask, ii;
 
-		snprintf(expected_id, sizeof(expected_id), "0x%08x",
+		snprintf(expected_id, sizeof expected_id, "0x%08x",
 			(unsigned)((tap->expected_ids_cnt > 0)
 				   ? tap->expected_ids[0]
 				   : 0));
@@ -174,7 +183,7 @@ COMMAND_HANDLER(handle_scan_chain_command)
 		expected = buf_get_u32(tap->expected, 0, tap->ir_length);
 		expected_mask = buf_get_u32(tap->expected_mask, 0, tap->ir_length);
 
-		command_print(CMD,
+		command_print(CMD_CTX,
 			"%2d %-18s     %c     0x%08x %s %5d 0x%02x  0x%02x",
 			tap->abs_chain_position,
 			tap->dotted_name,
@@ -186,12 +195,12 @@ COMMAND_HANDLER(handle_scan_chain_command)
 			(unsigned int)(expected_mask));
 
 		for (ii = 1; ii < tap->expected_ids_cnt; ii++) {
-			snprintf(expected_id, sizeof(expected_id), "0x%08x",
+			snprintf(expected_id, sizeof expected_id, "0x%08x",
 				(unsigned) tap->expected_ids[ii]);
 			if (tap->ignore_version)
 				expected_id[2] = '*';
 
-			command_print(CMD,
+			command_print(CMD_CTX,
 				"                                           %s",
 				expected_id);
 		}
@@ -235,8 +244,8 @@ static int aice_init_reset(struct command_context *cmd_ctx)
 static int jim_aice_arp_init_reset(Jim_Interp *interp, int argc, Jim_Obj * const *argv)
 {
 	int e = ERROR_OK;
-	struct jim_getopt_info goi;
-	jim_getopt_setup(&goi, interp, argc - 1, argv + 1);
+	Jim_GetOptInfo goi;
+	Jim_GetOpt_Setup(&goi, interp, argc - 1, argv + 1);
 	if (goi.argc != 0) {
 		Jim_WrongNumArgs(goi.interp, 1, goi.argv - 1, "(no params)");
 		return JIM_ERR;
@@ -245,8 +254,9 @@ static int jim_aice_arp_init_reset(Jim_Interp *interp, int argc, Jim_Obj * const
 	e = aice_init_reset(context);
 
 	if (e != ERROR_OK) {
-		Jim_Obj *obj = Jim_NewIntObj(goi.interp, e);
-		Jim_SetResultFormatted(goi.interp, "error: %#s", obj);
+		Jim_Obj *eObj = Jim_NewIntObj(goi.interp, e);
+		Jim_SetResultFormatted(goi.interp, "error: %#s", eObj);
+		Jim_FreeNewObj(goi.interp, eObj);
 		return JIM_ERR;
 	}
 	return JIM_OK;
@@ -254,8 +264,8 @@ static int jim_aice_arp_init_reset(Jim_Interp *interp, int argc, Jim_Obj * const
 
 static int jim_aice_names(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 {
-	struct jim_getopt_info goi;
-	jim_getopt_setup(&goi, interp, argc - 1, argv + 1);
+	Jim_GetOptInfo goi;
+	Jim_GetOpt_Setup(&goi, interp, argc - 1, argv + 1);
 	if (goi.argc != 0) {
 		Jim_WrongNumArgs(goi.interp, 1, goi.argv, "Too many parameters");
 		return JIM_ERR;
@@ -273,7 +283,8 @@ static int jim_aice_names(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 }
 
 /* */
-static const struct command_registration aice_transport_jtag_subcommand_handlers[] = {
+static const struct command_registration
+aice_transport_jtag_subcommand_handlers[] = {
 	{
 		.name = "init",
 		.mode = COMMAND_ANY,
@@ -375,7 +386,8 @@ static const struct command_registration aice_transport_command_handlers[] = {
 /* */
 static int aice_transport_register_commands(struct command_context *cmd_ctx)
 {
-	return register_commands(cmd_ctx, NULL, aice_transport_command_handlers);
+	return register_commands(cmd_ctx, NULL,
+			aice_transport_command_handlers);
 }
 
 /* */
@@ -430,3 +442,4 @@ static void aice_constructor(void)
 {
 	transport_register(&aice_jtag_transport);
 }
+

@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2013-2014 by Franck Jullien                             *
  *   elec4fun@gmail.com                                                    *
@@ -11,6 +9,19 @@
  *   And the Mohor interface version of this file which is:                *
  *   Copyright (C) 2011 by Julius Baxter                                   *
  *   julius@opencores.org                                                  *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -858,7 +869,7 @@ static int or1k_adv_cpu_reset(struct or1k_jtag *jtag_info, int action)
 static int or1k_adv_jtag_read_memory(struct or1k_jtag *jtag_info,
 			    uint32_t addr, uint32_t size, int count, uint8_t *buffer)
 {
-	LOG_DEBUG("Reading WB%" PRIu32 " at 0x%08" PRIx32, size * 8, addr);
+	LOG_DEBUG("Reading WB%" PRId32 " at 0x%08" PRIx32, size * 8, addr);
 
 	int retval;
 	if (!jtag_info->or1k_jtag_inited) {
@@ -913,7 +924,7 @@ static int or1k_adv_jtag_read_memory(struct or1k_jtag *jtag_info,
 static int or1k_adv_jtag_write_memory(struct or1k_jtag *jtag_info,
 			     uint32_t addr, uint32_t size, int count, const uint8_t *buffer)
 {
-	LOG_DEBUG("Writing WB%" PRIu32 " at 0x%08" PRIx32, size * 8, addr);
+	LOG_DEBUG("Writing WB%" PRId32 " at 0x%08" PRIx32, size * 8, addr);
 
 	int retval;
 	if (!jtag_info->or1k_jtag_inited) {
@@ -934,8 +945,8 @@ static int or1k_adv_jtag_write_memory(struct or1k_jtag *jtag_info,
 	void *t = NULL;
 	struct target *target = jtag_info->target;
 	if ((target->endianness == TARGET_BIG_ENDIAN) && (size != 1)) {
-		t = calloc(count * size, sizeof(uint8_t));
-		if (!t) {
+		t = malloc(count * size * sizeof(uint8_t));
+		if (t == NULL) {
 			LOG_ERROR("Out of memory");
 			return ERROR_FAIL;
 		}
@@ -947,9 +958,6 @@ static int or1k_adv_jtag_write_memory(struct or1k_jtag *jtag_info,
 		case 2:
 			buf_bswap16(t, buffer, size * count);
 			break;
-		default:
-			free(t);
-			return ERROR_TARGET_FAILURE;
 		}
 		buffer = t;
 	}
@@ -967,7 +975,8 @@ static int or1k_adv_jtag_write_memory(struct or1k_jtag *jtag_info,
 					     size, blocks_this_round,
 					     block_count_address);
 		if (retval != ERROR_OK) {
-			free(t);
+			if (t != NULL)
+				free(t);
 			return retval;
 		}
 
@@ -976,7 +985,9 @@ static int or1k_adv_jtag_write_memory(struct or1k_jtag *jtag_info,
 		block_count_buffer += size * MAX_BURST_SIZE;
 	}
 
-	free(t);
+	if (t != NULL)
+		free(t);
+
 	return ERROR_OK;
 }
 
@@ -984,7 +995,7 @@ int or1k_adv_jtag_jsp_xfer(struct or1k_jtag *jtag_info,
 				  int *out_len, unsigned char *out_buffer,
 				  int *in_len, unsigned char *in_buffer)
 {
-	LOG_DEBUG("JSP transfer");
+	LOG_DEBUG("JSP transfert");
 
 	int retval;
 	if (!jtag_info->or1k_jtag_inited)

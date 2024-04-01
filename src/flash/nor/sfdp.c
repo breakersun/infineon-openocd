@@ -1,7 +1,17 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2019 by Andreas Bolsch <andreas.bolsch@mni.thm.de	   *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or	   *
+ *   (at your option) any later version.								   *
+ *																		   *
+ *   This program is distributed in the hope that it will be useful,	   *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of		   *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the		   *
+ *   GNU General Public License for more details.						   *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License	   *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -17,7 +27,7 @@
 #define SFDP_BASIC_FLASH	0xFF00
 #define SFDP_4BYTE_ADDR		0xFF84
 
-static const char *sfdp_name = "sfdp";
+const char *sfdp_name = "sfdp";
 
 struct sfdp_hdr {
 	uint32_t			signature;
@@ -66,36 +76,37 @@ int spi_sfdp(struct flash_bank *bank, struct flash_device *dev,
 	uint32_t *ptable = NULL;
 	unsigned int j, k, nph;
 	int retval, erase_type = 0;
+	const int addr_len = 3, dummy = 8;
 
 	memset(dev, 0, sizeof(struct flash_device));
 
 	/* retrieve SFDP header */
 	memset(&header, 0, sizeof(header));
-	retval = read_sfdp_block(bank, 0x0, sizeof(header) >> 2, (uint32_t *)&header);
+	retval = read_sfdp_block(bank, 0x0, addr_len, dummy, sizeof(header) >> 2, (uint32_t *) &header);
 	if (retval != ERROR_OK)
-		return retval;
+		return ERROR_FAIL;
 	LOG_DEBUG("header 0x%08" PRIx32 " 0x%08" PRIx32, header.signature, header.revision);
 	if (header.signature != SFDP_MAGIC) {
 		LOG_INFO("no SDFP found");
-		return ERROR_FLASH_BANK_NOT_PROBED;
+		return ERROR_TARGET_NOT_EXAMINED;
 	}
 	if (((header.revision >> 24) & 0xFF) != SFDP_ACCESS_PROT) {
-		LOG_ERROR("access protocol 0x%02x not implemented",
-			(header.revision >> 24) & 0xFFU);
-		return ERROR_FLASH_BANK_NOT_PROBED;
+		LOG_ERROR("access protocol 0x%02" PRIx8 " not implemented",
+			(uint8_t)((header.revision >> 24) & 0xFF));
+		return ERROR_TARGET_NOT_EXAMINED;
 	}
 
 	/* retrieve table of parameter headers */
 	nph = ((header.revision >> 16) & 0xFF) + 1;
 	LOG_DEBUG("parameter headers: %d", nph);
 	pheaders = malloc(sizeof(struct sfdp_phdr) * nph);
-	if (!pheaders) {
+	if (pheaders == NULL) {
 		LOG_ERROR("not enough memory");
 		return ERROR_FAIL;
 	}
 	memset(pheaders, 0, sizeof(struct sfdp_phdr) * nph);
-	retval = read_sfdp_block(bank, sizeof(header),
-		(sizeof(struct sfdp_phdr) >> 2) * nph, (uint32_t *)pheaders);
+	retval = read_sfdp_block(bank, sizeof(header), addr_len,
+		dummy, (sizeof(struct sfdp_phdr) >> 2) * nph, (uint32_t *) pheaders);
 	if (retval != ERROR_OK)
 		goto err;
 
@@ -105,29 +116,31 @@ int spi_sfdp(struct flash_bank *bank, struct flash_device *dev,
 		uint32_t ptr = pheaders[k].ptr & 0xFFFFFF;
 
 		LOG_DEBUG("pheader %d len=0x%02" PRIx8 " id=0x%04" PRIx16
-			" ptr=0x%06" PRIx32, k, words, id, ptr);
+			" ptr=0x%06" PRIx32, (uint8_t)k, words, id, ptr);
 
 		/* retrieve parameter table */
+		if (ptable)
+			free(ptable);
 		ptable = malloc(words << 2);
-		if (!ptable) {
+		if (ptable == NULL) {
 			LOG_ERROR("not enough memory");
 			retval = ERROR_FAIL;
 			goto err;
 		}
-		retval = read_sfdp_block(bank, ptr, words, ptable);
+		retval = read_sfdp_block(bank, ptr, addr_len, dummy, words, (uint32_t *) ptable);
 		if (retval != ERROR_OK)
 			goto err;
 
 		for (j = 0; j < words; j++)
-			LOG_DEBUG("word %02d 0x%08X", j + 1, ptable[j]);
+			LOG_DEBUG("word %02d 0x%08X", j + 1, ((uint32_t *) ptable)[j]);
 
 		if (id == SFDP_BASIC_FLASH) {
-			struct sfdp_basic_flash_param *table = (struct sfdp_basic_flash_param *)ptable;
+			struct sfdp_basic_flash_param *table = (struct sfdp_basic_flash_param *) ptable;
 			uint16_t erase;
 
 			if (words < 9) {
 				LOG_ERROR("id=0x%04" PRIx16 " invalid length %d", id, words);
-				retval = ERROR_FLASH_BANK_NOT_PROBED;
+				retval = ERROR_TARGET_NOT_EXAMINED;
 				goto err;
 			}
 
@@ -173,7 +186,7 @@ int spi_sfdp(struct flash_bank *bank, struct flash_device *dev,
 			dev->sectorsize = 1UL << (erase & 0xFF);
 
 			if ((offsetof(struct sfdp_basic_flash_param, chip_byte) >> 2) < words) {
-				/* get Program Page Size, if chip_byte present, that's optional */
+				/* get Program Page Size, if chip_byte present */
 				dev->pagesize = 1UL << ((table->chip_byte >> 4) & 0x0F);
 			} else {
 				/* no explicit page size specified ... */
@@ -194,7 +207,6 @@ int spi_sfdp(struct flash_bank *bank, struct flash_device *dev,
 				if (((offsetof(struct sfdp_basic_flash_param, addr_reset) >> 2) < words) &&
 					(table->addr_reset & (1UL << 29))) {
 					/* dedicated 4-byte-address instructions, hopefully these ...
-					 * this entry is unfortunately optional as well
 					 * a subsequent 4-byte address table may overwrite this */
 					dev->read_cmd = 0x13;
 					dev->pprog_cmd = 0x12;
@@ -205,31 +217,31 @@ int spi_sfdp(struct flash_bank *bank, struct flash_device *dev,
 					LOG_INFO("device has to be switched to 4-byte addresses");
 			}
 		} else if (id == SFDP_4BYTE_ADDR) {
-			struct sfdp_4byte_addr_param *table = (struct sfdp_4byte_addr_param *)ptable;
+			struct sfdp_4byte_addr_param *table = (struct sfdp_4byte_addr_param *) ptable;
 
-			if (words >= (offsetof(struct sfdp_4byte_addr_param, erase_t1234)
-				+ sizeof(table->erase_t1234)) >> 2) {
-				LOG_INFO("4-byte address parameter table");
-
-				/* read and page program instructions */
-				if (table->flags & (1UL << 0))
-					dev->read_cmd = 0x13;
-				if (table->flags & (1UL << 5))
-					dev->qread_cmd = 0xEC;
-				if (table->flags & (1UL << 6))
-					dev->pprog_cmd = 0x12;
-
-				/* erase instructions */
-				if ((erase_type == 1) && (table->flags & (1UL << 9)))
-					dev->erase_cmd = (table->erase_t1234 >> 0) & 0xFF;
-				else if ((erase_type == 2) && (table->flags & (1UL << 10)))
-					dev->erase_cmd = (table->erase_t1234 >> 8) & 0xFF;
-				else if ((erase_type == 3) && (table->flags & (1UL << 11)))
-					dev->erase_cmd = (table->erase_t1234 >> 16) & 0xFF;
-				else if ((erase_type == 4) && (table->flags & (1UL << 12)))
-					dev->erase_cmd = (table->erase_t1234 >> 24) & 0xFF;
-			} else
+			if (words < 2) {
 				LOG_ERROR("parameter table id=0x%04" PRIx16 " invalid length %d", id, words);
+				continue;
+			}
+			LOG_INFO("4-byte address parameter table");
+
+			/* read and page program instructions */
+			if (table->flags & (1UL << 0))
+				dev->read_cmd = 0x13;
+			if (table->flags & (1UL << 5))
+				dev->qread_cmd = 0xEC;
+			if (table->flags & (1UL << 6))
+				dev->pprog_cmd = 0x12;
+
+			/* erase instructions */
+			if ((erase_type == 1) && (table->flags & (1UL << 9)))
+				dev->erase_cmd = (table->erase_t1234 >> 0) & 0xFF;
+			else if ((erase_type == 2) && (table->flags & (1UL << 10)))
+				dev->erase_cmd = (table->erase_t1234 >> 8) & 0xFF;
+			else if ((erase_type == 3) && (table->flags & (1UL << 11)))
+				dev->erase_cmd = (table->erase_t1234 >> 16) & 0xFF;
+			else if ((erase_type == 4) && (table->flags & (1UL << 12)))
+				dev->erase_cmd = (table->erase_t1234 >> 24) & 0xFF;
 		} else
 			LOG_DEBUG("unimplemented parameter table id=0x%04" PRIx16, id);
 
@@ -242,12 +254,14 @@ int spi_sfdp(struct flash_bank *bank, struct flash_device *dev,
 		retval = ERROR_OK;
 	} else {
 		LOG_ERROR("incomplete/invalid SFDP");
-		retval = ERROR_FLASH_BANK_NOT_PROBED;
+		retval = ERROR_TARGET_NOT_EXAMINED;
 	}
 
 err:
-	free(pheaders);
-	free(ptable);
+	if (pheaders)
+		free(pheaders);
+	if (ptable)
+		free(ptable);
 
 	return retval;
 }

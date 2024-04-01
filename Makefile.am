@@ -1,16 +1,13 @@
-# SPDX-License-Identifier: GPL-2.0-or-later
-
 # not a GNU package. You can remove this line, if
 # have all needed files, that a GNU package needs
 AUTOMAKE_OPTIONS = gnu 1.6
-
-.DELETE_ON_ERROR:
 
 # make sure we pass the correct jimtcl flags to distcheck
 DISTCHECK_CONFIGURE_FLAGS = --disable-install-jim
 
 # do not run Jim Tcl tests (esp. during distcheck)
-check-recursive: SUBDIRS :=
+check-recursive:
+	@true
 
 nobase_dist_pkgdata_DATA = \
 	contrib/libdcc/dcc_stdio.c \
@@ -38,6 +35,7 @@ AM_CFLAGS = $(GCC_WARNINGS)
 AM_CPPFLAGS = $(HOST_CPPFLAGS)\
 			  -I$(top_srcdir)/src \
 			  -I$(top_builddir)/src \
+			  -I$(top_srcdir)/src/helper \
 			  -DPKGDATADIR=\"$(pkgdatadir)\" \
 			  -DBINDIR=\"$(bindir)\"
 
@@ -50,21 +48,9 @@ EXTRA_DIST += \
 	HACKING \
 	NEWTAPS \
 	README.Windows \
-	README.macOS \
-	$(EXTRA_DIST_NEWS) \
+	README.OSX \
+	$(wildcard $(srcdir)/NEWS*) \
 	Doxyfile.in \
-	LICENSES/license-rules.txt \
-	LICENSES/exceptions/eCos-exception-2.0 \
-	LICENSES/preferred/BSD-1-Clause \
-	LICENSES/preferred/BSD-2-Clause \
-	LICENSES/preferred/BSD-2-Clause-Views \
-	LICENSES/preferred/BSD-3-Clause \
-	LICENSES/preferred/BSD-Source-Code \
-	LICENSES/preferred/GFDL-1.2 \
-	LICENSES/preferred/gfdl-1.2.texi.readme \
-	LICENSES/preferred/GPL-2.0 \
-	LICENSES/preferred/MIT \
-	LICENSES/stand-alone/GPL-3.0 \
 	tools/logger.pl \
 	tools/rlink_make_speed_table \
 	tools/st7_dtc_as \
@@ -103,9 +89,14 @@ $(THE_MANUAL): %.pdf: %.tex
 	-cd $$(dirname $*) && pdflatex $$(basename $*)
 
 TCL_PATH = tcl
+FLM_PATH = flm
+
 # command to find paths of script files, relative to TCL_PATH
 TCL_FILES = find $(srcdir)/$(TCL_PATH) -name '*.cfg' -o -name '*.tcl' -o -name '*.txt' | \
 		sed -e 's,^$(srcdir)/$(TCL_PATH),,'
+
+FLM_FILES = find $(srcdir)/$(FLM_PATH) -name '*.flm' -o -name '*.elf' | \
+		sed -e 's,^$(srcdir)/$(FLM_PATH),,'
 
 dist-hook:
 	if test -d $(srcdir)/.git -a \( ! -e $(distdir)/ChangeLog -o -w $(distdir)/ChangeLog \) ; then \
@@ -116,12 +107,22 @@ dist-hook:
 		mkdir -p "$$(dirname $$j)" && \
 		$(INSTALL_DATA) $(srcdir)/$(TCL_PATH)/$$i $$j; \
 	done
+	for i in $$($(FLM_FILES)); do \
+		j="$(distdir)/$(FLM_PATH)/$$i" && \
+		mkdir -p "$$(dirname $$j)" && \
+		$(INSTALL_DATA) $(srcdir)/$(FLM_PATH)/$$i $$j; \
+	done
 
 install-data-hook:
 	for i in $$($(TCL_FILES)); do \
 		j="$(DESTDIR)$(pkgdatadir)/scripts/$$i" && \
 		mkdir -p "$$(dirname $$j)" && \
 		$(INSTALL_DATA) $(srcdir)/$(TCL_PATH)/$$i $$j; \
+	done
+	for i in $$($(FLM_FILES)); do \
+		j="$(DESTDIR)$(pkgdatadir)/flm/$$i" && \
+		mkdir -p "$$(dirname $$j)" && \
+		$(INSTALL_DATA) $(srcdir)/$(FLM_PATH)/$$i $$j; \
 	done
 
 uninstall-hook:

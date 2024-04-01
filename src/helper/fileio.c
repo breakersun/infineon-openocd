@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2007 by Dominic Rath                                    *
  *   Dominic.Rath@gmx.de                                                   *
@@ -9,6 +7,19 @@
  *                                                                         *
  *   Copyright (C) 2008 by Spencer Oliver                                  *
  *   spen@spen-soft.co.uk                                                  *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -18,7 +29,6 @@
 #include "log.h"
 #include "configuration.h"
 #include "fileio.h"
-#include "replacements.h"
 
 struct fileio {
 	char *url;
@@ -187,9 +197,9 @@ int fileio_read_u32(struct fileio *fileio, uint32_t *data)
 
 	retval = fileio_local_read(fileio, sizeof(uint32_t), buf, &size_read);
 
-	if (retval == ERROR_OK && sizeof(uint32_t) != size_read)
+	if (ERROR_OK == retval && sizeof(uint32_t) != size_read)
 		retval = -EIO;
-	if (retval == ERROR_OK)
+	if (ERROR_OK == retval)
 		*data = be_to_h_u32(buf);
 
 	return retval;
@@ -197,7 +207,7 @@ int fileio_read_u32(struct fileio *fileio, uint32_t *data)
 
 static int fileio_local_fgets(struct fileio *fileio, size_t size, void *buffer)
 {
-	if (!fgets(buffer, size, fileio->file))
+	if (fgets(buffer, size, fileio->file) == NULL)
 		return ERROR_FILEIO_OPERATION_FAILED;
 
 	return ERROR_OK;
@@ -241,7 +251,7 @@ int fileio_write_u32(struct fileio *fileio, uint32_t data)
 
 	retval = fileio_write(fileio, 4, buf, &size_written);
 
-	if (retval == ERROR_OK && size_written != sizeof(uint32_t))
+	if (ERROR_OK == retval && size_written != sizeof(uint32_t))
 		retval = -EIO;
 
 	return retval;

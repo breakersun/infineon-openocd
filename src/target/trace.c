@@ -1,8 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2005, 2007 by Dominic Rath                              *
  *   Dominic.Rath@gmx.de                                                   *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -42,7 +53,7 @@ COMMAND_HANDLER(handle_trace_point_command)
 		uint32_t i;
 
 		for (i = 0; i < trace->num_trace_points; i++) {
-			command_print(CMD, "trace point 0x%8.8" PRIx32 " (%lld times hit)",
+			command_print(CMD_CTX, "trace point 0x%8.8" PRIx32 " (%lld times hit)",
 					trace->trace_points[i].address,
 					(long long)trace->trace_points[i].hit_counter);
 		}
@@ -51,9 +62,10 @@ COMMAND_HANDLER(handle_trace_point_command)
 	}
 
 	if (!strcmp(CMD_ARGV[0], "clear")) {
-		free(trace->trace_points);
-		trace->trace_points = NULL;
-
+		if (trace->trace_points) {
+			free(trace->trace_points);
+			trace->trace_points = NULL;
+		}
 		trace->num_trace_points = 0;
 		trace->trace_points_size = 0;
 
@@ -90,19 +102,20 @@ COMMAND_HANDLER(handle_trace_history_command)
 			return ERROR_OK;
 		}
 
-		free(trace->trace_history);
+		if (trace->trace_history)
+			free(trace->trace_history);
 
 		COMMAND_PARSE_NUMBER(u32, CMD_ARGV[0], trace->trace_history_size);
 		trace->trace_history = malloc(sizeof(uint32_t) * trace->trace_history_size);
 
-		command_print(CMD, "new trace history size: %i", (int)(trace->trace_history_size));
+		command_print(CMD_CTX, "new trace history size: %i", (int)(trace->trace_history_size));
 	} else {
 		uint32_t i;
 		uint32_t first = 0;
 		uint32_t last = trace->trace_history_pos;
 
 		if (!trace->trace_history_size) {
-			command_print(CMD, "trace history buffer is not allocated");
+			command_print(CMD_CTX, "trace history buffer is not allocated");
 			return ERROR_OK;
 		}
 
@@ -115,11 +128,11 @@ COMMAND_HANDLER(handle_trace_history_command)
 			if (trace->trace_history[i % trace->trace_history_size] < trace->num_trace_points) {
 				uint32_t address;
 				address = trace->trace_points[trace->trace_history[i % trace->trace_history_size]].address;
-				command_print(CMD, "trace point %i: 0x%8.8" PRIx32 "",
+				command_print(CMD_CTX, "trace point %i: 0x%8.8" PRIx32 "",
 						(int)(trace->trace_history[i % trace->trace_history_size]),
 						address);
 			} else
-				command_print(CMD, "trace point %i: -not defined-",
+				command_print(CMD_CTX, "trace point %i: -not defined-",
 						(int)(trace->trace_history[i % trace->trace_history_size]));
 		}
 	}

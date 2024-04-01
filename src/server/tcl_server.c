@@ -1,8 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2010 Øyvind Harboe                                      *
  *   oyvind.harboe@zylin.com                                               *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -134,12 +145,12 @@ static int tcl_new_connection(struct connection *connection)
 	struct tcl_connection *tclc;
 
 	tclc = calloc(1, sizeof(struct tcl_connection));
-	if (!tclc)
+	if (tclc == NULL)
 		return ERROR_CONNECTION_REJECTED;
 
 	tclc->tc_line_size = TCL_LINE_INITIAL;
 	tclc->tc_line = malloc(tclc->tc_line_size);
-	if (!tclc->tc_line) {
+	if (tclc->tc_line == NULL) {
 		free(tclc);
 		return ERROR_CONNECTION_REJECTED;
 	}
@@ -147,7 +158,7 @@ static int tcl_new_connection(struct connection *connection)
 	connection->priv = tclc;
 
 	struct target *target = get_current_target_or_null(connection->cmd_ctx);
-	if (target)
+	if (target != NULL)
 		tclc->tc_laststate = target->state;
 
 	/* store the connection object on cmd_ctx so we can access it from command handlers */
@@ -181,14 +192,14 @@ static int tcl_input(struct connection *connection)
 	}
 
 	tclc = connection->priv;
-	if (!tclc)
+	if (tclc == NULL)
 		return ERROR_CONNECTION_REJECTED;
 
 	/* push as much data into the line as possible */
 	for (i = 0; i < rlen; i++) {
 		/* buffer the data */
 		tclc->tc_line[tclc->tc_lineoffset] = in[i];
-		if (tclc->tc_lineoffset + 1 < tclc->tc_line_size) {
+		if (tclc->tc_lineoffset < tclc->tc_line_size) {
 			tclc->tc_lineoffset++;
 		} else if (tclc->tc_line_size >= TCL_LINE_MAX) {
 			/* maximum line size reached, drop line */
@@ -204,7 +215,7 @@ static int tcl_input(struct connection *connection)
 				tc_line_size_new = TCL_LINE_MAX;
 
 			tc_line_new = realloc(tclc->tc_line, tc_line_size_new);
-			if (!tc_line_new) {
+			if (tc_line_new == NULL) {
 				tclc->tc_linedrop = 1;
 			} else {
 				tclc->tc_line = tc_line_new;
@@ -265,15 +276,6 @@ static int tcl_closed(struct connection *connection)
 	return ERROR_OK;
 }
 
-static const struct service_driver tcl_service_driver = {
-	.name = "tcl",
-	.new_connection_during_keep_alive_handler = NULL,
-	.new_connection_handler = tcl_new_connection,
-	.input_handler = tcl_input,
-	.connection_closed_handler = tcl_closed,
-	.keep_client_alive_handler = NULL,
-};
-
 int tcl_init(void)
 {
 	if (strcmp(tcl_port, "disabled") == 0) {
@@ -281,7 +283,9 @@ int tcl_init(void)
 		return ERROR_OK;
 	}
 
-	return add_service(&tcl_service_driver, tcl_port, CONNECTION_LIMIT_UNLIMITED, NULL);
+	return add_service("tcl", tcl_port, CONNECTION_LIMIT_UNLIMITED,
+		&tcl_new_connection, &tcl_input,
+		&tcl_closed, NULL);
 }
 
 COMMAND_HANDLER(handle_tcl_port_command)
@@ -294,10 +298,10 @@ COMMAND_HANDLER(handle_tcl_notifications_command)
 	struct connection *connection = NULL;
 	struct tcl_connection *tclc = NULL;
 
-	if (CMD_CTX->output_handler_priv)
+	if (CMD_CTX->output_handler_priv != NULL)
 		connection = CMD_CTX->output_handler_priv;
 
-	if (connection && !strcmp(connection->service->name, "tcl")) {
+	if (connection != NULL && !strcmp(connection->service->name, "tcl")) {
 		tclc = connection->priv;
 		return CALL_COMMAND_HANDLER(handle_command_parse_bool, &tclc->tc_notify, "Target Notification output ");
 	} else {
@@ -311,10 +315,10 @@ COMMAND_HANDLER(handle_tcl_trace_command)
 	struct connection *connection = NULL;
 	struct tcl_connection *tclc = NULL;
 
-	if (CMD_CTX->output_handler_priv)
+	if (CMD_CTX->output_handler_priv != NULL)
 		connection = CMD_CTX->output_handler_priv;
 
-	if (connection && !strcmp(connection->service->name, "tcl")) {
+	if (connection != NULL && !strcmp(connection->service->name, "tcl")) {
 		tclc = connection->priv;
 		return CALL_COMMAND_HANDLER(handle_command_parse_bool, &tclc->tc_trace, "Target trace output ");
 	} else {
@@ -327,7 +331,7 @@ static const struct command_registration tcl_command_handlers[] = {
 	{
 		.name = "tcl_port",
 		.handler = handle_tcl_port_command,
-		.mode = COMMAND_CONFIG,
+		.mode = COMMAND_ANY,
 		.help = "Specify port on which to listen "
 			"for incoming Tcl syntax.  "
 			"Read help on 'gdb_port'.",

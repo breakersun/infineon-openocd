@@ -1,7 +1,18 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
-
 /***************************************************************************
  *   Copyright (C) 2009 - 2010 by Simon Qian <SimonQian@SimonQian.com>     *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifndef OPENOCD_JTAG_DRIVERS_VERSALOON_VERSALOON_INTERNAL_H
@@ -80,7 +91,7 @@ struct versaloon_pending_t {
 	void *extra_data;
 	versaloon_callback_t callback;
 };
-extern struct versaloon_pending_t
+extern struct versaloon_pending_t \
 	versaloon_pending[VERSALOON_MAX_PENDING_NUMBER];
 extern uint16_t versaloon_pending_idx;
 void versaloon_set_pending_id(uint32_t id);

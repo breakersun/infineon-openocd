@@ -1,8 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2010 by Spencer Oliver                                  *
  *   spen@spen-soft.co.uk                                                  *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -16,7 +27,7 @@ static struct flash_bank *virtual_get_master_bank(struct flash_bank *bank)
 	struct flash_bank *master_bank;
 
 	master_bank = get_flash_bank_by_name_noprobe(bank->driver_priv);
-	if (!master_bank)
+	if (master_bank == NULL)
 		LOG_ERROR("master flash bank '%s' does not exist", (char *)bank->driver_priv);
 
 	return master_bank;
@@ -26,7 +37,7 @@ static void virtual_update_bank_info(struct flash_bank *bank)
 {
 	struct flash_bank *master_bank = virtual_get_master_bank(bank);
 
-	if (!master_bank)
+	if (master_bank == NULL)
 		return;
 
 	/* update the info we do not have */
@@ -53,7 +64,7 @@ FLASH_BANK_COMMAND_HANDLER(virtual_flash_bank_command)
 	const char *bank_name = CMD_ARGV[6];
 	struct flash_bank *master_bank = get_flash_bank_by_name_noprobe(bank_name);
 
-	if (!master_bank) {
+	if (master_bank == NULL) {
 		LOG_ERROR("master flash bank '%s' does not exist", bank_name);
 		return ERROR_FLASH_OPERATION_FAILED;
 	}
@@ -64,38 +75,44 @@ FLASH_BANK_COMMAND_HANDLER(virtual_flash_bank_command)
 	return ERROR_OK;
 }
 
-static int virtual_protect(struct flash_bank *bank, int set, unsigned int first,
-		unsigned int last)
+static int virtual_protect(struct flash_bank *bank, int set, int first, int last)
 {
 	struct flash_bank *master_bank = virtual_get_master_bank(bank);
+	int retval;
 
-	if (!master_bank)
+	if (master_bank == NULL)
 		return ERROR_FLASH_OPERATION_FAILED;
 
-	return flash_driver_protect(master_bank, set, first, last);
+	/* call master handler */
+	retval = master_bank->driver->protect(master_bank, set, first, last);
+	if (retval != ERROR_OK)
+		return retval;
+
+	return ERROR_OK;
 }
 
 static int virtual_protect_check(struct flash_bank *bank)
 {
 	struct flash_bank *master_bank = virtual_get_master_bank(bank);
+	int retval;
 
-	if (!master_bank)
+	if (master_bank == NULL)
 		return ERROR_FLASH_OPERATION_FAILED;
 
-	if (!master_bank->driver->protect_check)
-		return ERROR_FLASH_OPER_UNSUPPORTED;
-
 	/* call master handler */
-	return master_bank->driver->protect_check(master_bank);
+	retval = master_bank->driver->protect_check(master_bank);
+	if (retval != ERROR_OK)
+		return retval;
+
+	return ERROR_OK;
 }
 
-static int virtual_erase(struct flash_bank *bank, unsigned int first,
-		unsigned int last)
+static int virtual_erase(struct flash_bank *bank, int first, int last)
 {
 	struct flash_bank *master_bank = virtual_get_master_bank(bank);
 	int retval;
 
-	if (!master_bank)
+	if (master_bank == NULL)
 		return ERROR_FLASH_OPERATION_FAILED;
 
 	/* call master handler */
@@ -112,7 +129,7 @@ static int virtual_write(struct flash_bank *bank, const uint8_t *buffer,
 	struct flash_bank *master_bank = virtual_get_master_bank(bank);
 	int retval;
 
-	if (!master_bank)
+	if (master_bank == NULL)
 		return ERROR_FLASH_OPERATION_FAILED;
 
 	/* call master handler */
@@ -128,7 +145,7 @@ static int virtual_probe(struct flash_bank *bank)
 	struct flash_bank *master_bank = virtual_get_master_bank(bank);
 	int retval;
 
-	if (!master_bank)
+	if (master_bank == NULL)
 		return ERROR_FLASH_OPERATION_FAILED;
 
 	/* call master handler */
@@ -147,7 +164,7 @@ static int virtual_auto_probe(struct flash_bank *bank)
 	struct flash_bank *master_bank = virtual_get_master_bank(bank);
 	int retval;
 
-	if (!master_bank)
+	if (master_bank == NULL)
 		return ERROR_FLASH_OPERATION_FAILED;
 
 	/* call master handler */
@@ -161,14 +178,14 @@ static int virtual_auto_probe(struct flash_bank *bank)
 	return ERROR_OK;
 }
 
-static int virtual_info(struct flash_bank *bank, struct command_invocation *cmd)
+static int virtual_info(struct flash_bank *bank, char *buf, int buf_size)
 {
 	struct flash_bank *master_bank = virtual_get_master_bank(bank);
 
-	if (!master_bank)
+	if (master_bank == NULL)
 		return ERROR_FLASH_OPERATION_FAILED;
 
-	command_print_sameline(cmd, "%s driver for flash bank %s at " TARGET_ADDR_FMT,
+	snprintf(buf, buf_size, "%s driver for flash bank %s at " TARGET_ADDR_FMT,
 			bank->driver->name, master_bank->name, master_bank->base);
 
 	return ERROR_OK;
@@ -179,7 +196,7 @@ static int virtual_blank_check(struct flash_bank *bank)
 	struct flash_bank *master_bank = virtual_get_master_bank(bank);
 	int retval;
 
-	if (!master_bank)
+	if (master_bank == NULL)
 		return ERROR_FLASH_OPERATION_FAILED;
 
 	/* call master handler */
@@ -196,7 +213,7 @@ static int virtual_flash_read(struct flash_bank *bank,
 	struct flash_bank *master_bank = virtual_get_master_bank(bank);
 	int retval;
 
-	if (!master_bank)
+	if (master_bank == NULL)
 		return ERROR_FLASH_OPERATION_FAILED;
 
 	/* call master handler */

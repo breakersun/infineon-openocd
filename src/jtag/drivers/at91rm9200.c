@@ -1,8 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2006 by Anders Larsen                                   *
  *   al@alarsen.net                                                        *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -100,6 +111,7 @@ static uint32_t *pio_base;
  */
 static bb_value_t at91rm9200_read(void);
 static int at91rm9200_write(int tck, int tms, int tdi);
+static int at91rm9200_reset(int trst, int srst);
 
 static int at91rm9200_init(void);
 static int at91rm9200_quit(void);
@@ -107,6 +119,7 @@ static int at91rm9200_quit(void);
 static struct bitbang_interface at91rm9200_bitbang = {
 	.read = at91rm9200_read,
 	.write = at91rm9200_write,
+	.reset = at91rm9200_reset,
 	.blink = 0
 };
 
@@ -176,20 +189,12 @@ static const struct command_registration at91rm9200_command_handlers[] = {
 	COMMAND_REGISTRATION_DONE
 };
 
-static struct jtag_interface at91rm9200_interface = {
-	.execute_queue = bitbang_execute_queue,
-};
-
-struct adapter_driver at91rm9200_adapter_driver = {
+struct jtag_interface at91rm9200_interface = {
 	.name = "at91rm9200",
-	.transports = jtag_only,
+	.execute_queue = bitbang_execute_queue,
 	.commands = at91rm9200_command_handlers,
-
 	.init = at91rm9200_init,
 	.quit = at91rm9200_quit,
-	.reset = at91rm9200_reset,
-
-	.jtag_ops = &at91rm9200_interface,
 };
 
 static int at91rm9200_init(void)
@@ -198,7 +203,7 @@ static int at91rm9200_init(void)
 
 	cur_device = devices;
 
-	if (!at91rm9200_device || at91rm9200_device[0] == 0) {
+	if (at91rm9200_device == NULL || at91rm9200_device[0] == 0) {
 		at91rm9200_device = "rea_ecr";
 		LOG_WARNING("No at91rm9200 device specified, using default 'rea_ecr'");
 	}
@@ -220,14 +225,14 @@ static int at91rm9200_init(void)
 
 	dev_mem_fd = open("/dev/mem", O_RDWR | O_SYNC);
 	if (dev_mem_fd < 0) {
-		LOG_ERROR("open: %s", strerror(errno));
+		perror("open");
 		return ERROR_JTAG_INIT_FAILED;
 	}
 
 	sys_controller = mmap(NULL, 4096, PROT_READ | PROT_WRITE,
 				MAP_SHARED, dev_mem_fd, AT91C_BASE_SYS);
 	if (sys_controller == MAP_FAILED) {
-		LOG_ERROR("mmap: %s", strerror(errno));
+		perror("mmap");
 		close(dev_mem_fd);
 		return ERROR_JTAG_INIT_FAILED;
 	}

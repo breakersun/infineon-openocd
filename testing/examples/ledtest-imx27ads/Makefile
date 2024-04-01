@@ -39,3 +39,4 @@ dump_full:
 
 clean:
 	-/bin/rm -f *.o *~ test.elf
+

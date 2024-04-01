@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2005 by Dominic Rath                                    *
  *   Dominic.Rath@gmx.de                                                   *
@@ -9,6 +7,19 @@
  *                                                                         *
  *   Copyright (C) 2010 by Drasko DRASKOVIC                                *
  *   drasko.draskovic@gmail.com                                            *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -34,17 +45,17 @@
 /**
  * flag to give info about cache manipulation during debug :
  * "0"	-	cache lines are invalidated "on the fly", for affected addresses.
- *			This is preferred from performance point of view.
+ *			This is prefered from performance point of view.
  * "1"	-	cache is invalidated and switched off on debug_entry, and switched back on on restore.
  *			It is kept off during debugging.
  */
 static uint8_t arm946e_preserve_cache;
 
-static int arm946e_post_debug_entry(struct target *target);
-static void arm946e_pre_restore_context(struct target *target);
+int arm946e_post_debug_entry(struct target *target);
+void arm946e_pre_restore_context(struct target *target);
 static int arm946e_read_cp15(struct target *target, int reg_addr, uint32_t *value);
 
-static int arm946e_init_arch_info(struct target *target,
+int arm946e_init_arch_info(struct target *target,
 	struct arm946e_common *arm946e,
 	struct jtag_tap *tap)
 {
@@ -88,21 +99,11 @@ static int arm946e_target_create(struct target *target, Jim_Interp *interp)
 	return ERROR_OK;
 }
 
-static void arm946e_deinit_target(struct target *target)
-{
-	struct arm *arm = target_to_arm(target);
-	struct arm946e_common *arm946e = target_to_arm946(target);
-
-	arm7_9_deinit(target);
-	arm_free_reg_cache(arm);
-	free(arm946e);
-}
-
-static int arm946e_verify_pointer(struct command_invocation *cmd,
+static int arm946e_verify_pointer(struct command_context *cmd_ctx,
 	struct arm946e_common *arm946e)
 {
 	if (arm946e->common_magic != ARM946E_COMMON_MAGIC) {
-		command_print(cmd, "target is not an ARM946");
+		command_print(cmd_ctx, "target is not an ARM946");
 		return ERROR_TARGET_INVALID;
 	}
 	return ERROR_OK;
@@ -173,7 +174,7 @@ static int arm946e_read_cp15(struct target *target, int reg_addr, uint32_t *valu
 	return ERROR_OK;
 }
 
-static int arm946e_write_cp15(struct target *target, int reg_addr, uint32_t value)
+int arm946e_write_cp15(struct target *target, int reg_addr, uint32_t value)
 {
 	int retval = ERROR_OK;
 	struct arm7_9_common *arm7_9 = target_to_arm7_9(target);
@@ -239,7 +240,7 @@ static uint32_t arm946e_cp15_get_csize(struct target *target, int idsel)
 	return csize ? 1 << (12 + (csize-3)) : 0;
 }
 
-static uint32_t arm946e_invalidate_whole_dcache(struct target *target)
+uint32_t arm946e_invalidate_whole_dcache(struct target *target)
 {
 	uint32_t csize = arm946e_cp15_get_csize(target, GET_DCACHE_SIZE);
 	if (csize == 0)
@@ -250,7 +251,7 @@ static uint32_t arm946e_invalidate_whole_dcache(struct target *target)
 	 */
 	int nb_idx = (csize / (4*8*NB_CACHE_WAYS));	/* gives nb of lines (indexes) in the cache */
 
-	/* Loop for all segments (i.e. ways) */
+	/* Loop for all segmentde (i.e. ways) */
 	uint32_t seg;
 	for (seg = 0; seg < NB_CACHE_WAYS; seg++) {
 		/* Loop for all indexes */
@@ -266,11 +267,7 @@ static uint32_t arm946e_invalidate_whole_dcache(struct target *target)
 
 			/* Read dtag */
 			uint32_t dtag;
-			retval = arm946e_read_cp15(target, 0x16, &dtag);
-			if (retval != ERROR_OK) {
-				LOG_DEBUG("ERROR reading dtag");
-				return retval;
-			}
+			arm946e_read_cp15(target, 0x16, (uint32_t *) &dtag);
 
 			/* Check cache line VALID bit */
 			if (!(dtag >> 4 & 0x1))
@@ -295,7 +292,7 @@ static uint32_t arm946e_invalidate_whole_dcache(struct target *target)
 	return ERROR_OK;
 }
 
-static uint32_t arm946e_invalidate_whole_icache(struct target *target)
+uint32_t arm946e_invalidate_whole_icache(struct target *target)
 {
 	/* Check cache presence before flushing - avoid undefined behavior */
 	uint32_t csize = arm946e_cp15_get_csize(target, GET_ICACHE_SIZE);
@@ -316,7 +313,7 @@ static uint32_t arm946e_invalidate_whole_icache(struct target *target)
 	return ERROR_OK;
 }
 
-static int arm946e_post_debug_entry(struct target *target)
+int arm946e_post_debug_entry(struct target *target)
 {
 	uint32_t ctr_reg = 0x0;
 	uint32_t retval = ERROR_OK;
@@ -324,7 +321,7 @@ static int arm946e_post_debug_entry(struct target *target)
 
 	/* See if CACHES are enabled, and save that info
 	 * in the context bits, so that arm946e_pre_restore_context() can use them */
-	arm946e_read_cp15(target, CP15_CTL, &ctr_reg);
+	arm946e_read_cp15(target, CP15_CTL, (uint32_t *) &ctr_reg);
 
 	/* Save control reg in the context */
 	arm946e->cp15_control_reg = ctr_reg;
@@ -357,7 +354,7 @@ static int arm946e_post_debug_entry(struct target *target)
 	return ERROR_OK;
 }
 
-static void arm946e_pre_restore_context(struct target *target)
+void arm946e_pre_restore_context(struct target *target)
 {
 	uint32_t ctr_reg = 0x0;
 	uint32_t retval;
@@ -365,7 +362,7 @@ static void arm946e_pre_restore_context(struct target *target)
 	if (arm946e_preserve_cache) {
 		struct arm946e_common *arm946e = target_to_arm946(target);
 		/* Get the contents of the CTR reg */
-		arm946e_read_cp15(target, CP15_CTL, &ctr_reg);
+		arm946e_read_cp15(target, CP15_CTL, (uint32_t *) &ctr_reg);
 
 		/**
 		 * Read-modify-write CP15 control
@@ -382,7 +379,7 @@ static void arm946e_pre_restore_context(struct target *target)
 	}	/* if preserve_cache */
 }
 
-static uint32_t arm946e_invalidate_dcache(struct target *target, uint32_t address,
+uint32_t arm946e_invalidate_dcache(struct target *target, uint32_t address,
 	uint32_t size, uint32_t count)
 {
 	uint32_t cur_addr = 0x0;
@@ -413,11 +410,7 @@ static uint32_t arm946e_invalidate_dcache(struct target *target, uint32_t addres
 			}
 
 			/* Read dtag */
-			retval = arm946e_read_cp15(target, 0x16, &dtag);
-			if (retval != ERROR_OK) {
-				LOG_DEBUG("ERROR reading dtag");
-				return retval;
-			}
+			arm946e_read_cp15(target, 0x16, (uint32_t *) &dtag);
 
 			/* Check cache line VALID bit */
 			if (!(dtag >> 4 & 0x1))
@@ -447,7 +440,7 @@ static uint32_t arm946e_invalidate_dcache(struct target *target, uint32_t addres
 	return ERROR_OK;
 }
 
-static uint32_t arm946e_invalidate_icache(struct target *target, uint32_t address,
+uint32_t arm946e_invalidate_icache(struct target *target, uint32_t address,
 	uint32_t size, uint32_t count)
 {
 	uint32_t cur_addr = 0x0;
@@ -470,11 +463,7 @@ static uint32_t arm946e_invalidate_icache(struct target *target, uint32_t addres
 			}
 
 			/* Read itag */
-			retval = arm946e_read_cp15(target, 0x17, &itag);
-			if (retval != ERROR_OK) {
-				LOG_DEBUG("ERROR reading itag");
-				return retval;
-			}
+			arm946e_read_cp15(target, 0x17, (uint32_t *) &itag);
 
 			/* Check cache line VALID bit */
 			if (!(itag >> 4 & 0x1))
@@ -498,7 +487,7 @@ static uint32_t arm946e_invalidate_icache(struct target *target, uint32_t addres
 }
 
 /** Writes a buffer, in the specified word size, with current MMU settings. */
-static int arm946e_write_memory(struct target *target, target_addr_t address,
+int arm946e_write_memory(struct target *target, target_addr_t address,
 	uint32_t size, uint32_t count, const uint8_t *buffer)
 {
 	int retval;
@@ -546,7 +535,7 @@ static int arm946e_write_memory(struct target *target, target_addr_t address,
 
 }
 
-static int arm946e_read_memory(struct target *target, target_addr_t address,
+int arm946e_read_memory(struct target *target, target_addr_t address,
 	uint32_t size, uint32_t count, uint8_t *buffer)
 {
 	int retval;
@@ -560,54 +549,70 @@ static int arm946e_read_memory(struct target *target, target_addr_t address,
 	return ERROR_OK;
 }
 
-COMMAND_HANDLER(arm946e_handle_cp15)
+static int jim_arm946e_cp15(Jim_Interp *interp, int argc, Jim_Obj * const *argv)
 {
 	/* one or two arguments, access a single register (write if second argument is given) */
-	if (CMD_ARGC < 1 || CMD_ARGC > 2)
-		return ERROR_COMMAND_SYNTAX_ERROR;
-
-	struct target *target = get_current_target(CMD_CTX);
-
-	struct arm946e_common *arm946e = target_to_arm946(target);
-	int retval = arm946e_verify_pointer(CMD, arm946e);
-	if (retval != ERROR_OK)
-		return retval;
-
-	if (target->state != TARGET_HALTED) {
-		command_print(CMD, "target must be stopped for \"%s\" command", CMD_NAME);
-		return ERROR_TARGET_NOT_HALTED;
+	if (argc < 2 || argc > 3) {
+		Jim_WrongNumArgs(interp, 1, argv, "addr [value]");
+		return JIM_ERR;
 	}
 
-	uint32_t address;
-	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[0], address);
+	struct command_context *cmd_ctx = current_command_context(interp);
+	assert(cmd_ctx != NULL);
 
-	if (CMD_ARGC == 1) {
+	struct target *target = get_current_target(cmd_ctx);
+	if (target == NULL) {
+		LOG_ERROR("arm946e: no current target");
+		return JIM_ERR;
+	}
+
+	struct arm946e_common *arm946e = target_to_arm946(target);
+	int retval = arm946e_verify_pointer(cmd_ctx, arm946e);
+	if (retval != ERROR_OK)
+		return JIM_ERR;
+
+	if (target->state != TARGET_HALTED) {
+		command_print(cmd_ctx, "target %s must be stopped for \"cp15\" command", target_name(target));
+		return JIM_ERR;
+	}
+
+	long l;
+	uint32_t address;
+	retval = Jim_GetLong(interp, argv[1], &l);
+	address = l;
+	if (JIM_OK != retval)
+		return retval;
+
+	if (argc == 2) {
 		uint32_t value;
 		retval = arm946e_read_cp15(target, address, &value);
 		if (retval != ERROR_OK) {
-			command_print(CMD, "%s cp15 reg %" PRIu32 " access failed", target_name(target), address);
-			return retval;
+			command_print(cmd_ctx, "%s cp15 reg %" PRIi32 " access failed", target_name(target), address);
+			return JIM_ERR;
 		}
 		retval = jtag_execute_queue();
 		if (retval != ERROR_OK)
-			return retval;
-
+			return JIM_ERR;
+		char buf[20];
+		sprintf(buf, "0x%08" PRIx32, value);
 		/* Return value in hex format */
-		command_print(CMD, "0x%08" PRIx32, value);
-	} else if (CMD_ARGC == 2) {
+		Jim_SetResultString(interp, buf, -1);
+	} else if (argc == 3) {
 		uint32_t value;
-		COMMAND_PARSE_NUMBER(u32, CMD_ARGV[1], value);
-
+		retval = Jim_GetLong(interp, argv[2], &l);
+		value = l;
+		if (JIM_OK != retval)
+			return retval;
 		retval = arm946e_write_cp15(target, address, value);
 		if (retval != ERROR_OK) {
-			command_print(CMD, "%s cp15 reg %" PRIu32 " access failed", target_name(target), address);
-			return retval;
+			command_print(cmd_ctx, "%s cp15 reg %" PRIi32 " access failed", target_name(target), address);
+			return JIM_ERR;
 		}
 		if (address == CP15_CTL)
 			arm946e_update_cp15_caches(target, value);
 	}
 
-	return ERROR_OK;
+	return JIM_OK;
 }
 
 COMMAND_HANDLER(arm946e_handle_idcache)
@@ -619,12 +624,12 @@ COMMAND_HANDLER(arm946e_handle_idcache)
 	struct target *target = get_current_target(CMD_CTX);
 	struct arm946e_common *arm946e = target_to_arm946(target);
 
-	retval = arm946e_verify_pointer(CMD, arm946e);
+	retval = arm946e_verify_pointer(CMD_CTX, arm946e);
 	if (retval != ERROR_OK)
 		return retval;
 
 	if (target->state != TARGET_HALTED) {
-		command_print(CMD, "target must be stopped for \"%s\" command", CMD_NAME);
+		command_print(CMD_CTX, "target must be stopped for \"%s\" command", CMD_NAME);
 		return ERROR_TARGET_NOT_HALTED;
 	}
 
@@ -634,9 +639,9 @@ COMMAND_HANDLER(arm946e_handle_idcache)
 		bool  bena = ((arm946e->cp15_control_reg & (icache ? CP15_CTL_ICACHE : CP15_CTL_DCACHE)) != 0)
 			  && (arm946e->cp15_control_reg & 0x1);
 		if (csize == 0)
-			command_print(CMD, "%s-cache absent", icache ? "I" : "D");
+			command_print(CMD_CTX, "%s-cache absent", icache ? "I" : "D");
 		else
-			command_print(CMD, "%s-cache size: %" PRIu32 "K, %s",
+			command_print(CMD_CTX, "%s-cache size: %" PRIu32 "K, %s",
 				      icache ? "I" : "D", csize, bena ? "enabled" : "disabled");
 		return ERROR_OK;
 	}
@@ -654,7 +659,7 @@ COMMAND_HANDLER(arm946e_handle_idcache)
 
 	/* Do not invalidate or change state, if cache is absent */
 	if (csize == 0) {
-		command_print(CMD, "%s-cache absent, '%s' operation undefined", icache ? "I" : "D", CMD_ARGV[0]);
+		command_print(CMD_CTX, "%s-cache absent, '%s' operation undefined", icache ? "I" : "D", CMD_ARGV[0]);
 		return ERROR_TARGET_RESOURCE_NOT_AVAILABLE;
 	}
 
@@ -698,7 +703,7 @@ COMMAND_HANDLER(arm946e_handle_idcache)
 static const struct command_registration arm946e_exec_command_handlers[] = {
 	{
 		.name = "cp15",
-		.handler = arm946e_handle_cp15,
+		.jim_handler = jim_arm946e_cp15,
 		.mode = COMMAND_EXEC,
 		.usage = "regnum [value]",
 		.help = "read/modify cp15 register",
@@ -720,7 +725,7 @@ static const struct command_registration arm946e_exec_command_handlers[] = {
 	COMMAND_REGISTRATION_DONE
 };
 
-static const struct command_registration arm946e_command_handlers[] = {
+const struct command_registration arm946e_command_handlers[] = {
 	{
 		.chain = arm9tdmi_command_handlers,
 	},
@@ -775,7 +780,6 @@ struct target_type arm946e_target = {
 	.commands = arm946e_command_handlers,
 	.target_create = arm946e_target_create,
 	.init_target = arm9tdmi_init_target,
-	.deinit_target = arm946e_deinit_target,
 	.examine = arm7_9_examine,
 	.check_reset = arm7_9_check_reset,
 };

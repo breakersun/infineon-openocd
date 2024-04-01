@@ -1,7 +1,18 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2014 by Mahavir Jain <mjain@marvell.com>                *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
  /*
@@ -26,7 +37,7 @@
 #define QSPI_W_EN (0x1)
 #define QSPI_SS_DISABLE (0x0)
 #define QSPI_SS_ENABLE (0x1)
-#define WRITE_DISABLE (0x0)
+#define WRITE_DISBALE (0x0)
 #define WRITE_ENABLE (0x1)
 
 #define QSPI_TIMEOUT (1000)
@@ -62,7 +73,7 @@
 #define DINCNT 0x20
 
 struct mrvlqspi_flash_bank {
-	bool probed;
+	int probed;
 	uint32_t reg_base;
 	uint32_t bank_num;
 	const struct flash_device *dev;
@@ -317,7 +328,7 @@ static int mrvlqspi_flash_busy_status(struct flash_bank *bank, int timeout)
 	uint8_t val;
 	int retval;
 
-	/* Flush read/write fifos */
+	/* Flush read/write fifo's */
 	retval = mrvlqspi_fifo_flush(bank, FIFO_FLUSH_TIMEOUT);
 	if (retval != ERROR_OK)
 		return retval;
@@ -368,7 +379,7 @@ static int mrvlqspi_set_write_status(struct flash_bank *bank, bool mode)
 	int retval;
 	uint32_t instr;
 
-	/* Flush read/write fifos */
+	/* Flush read/write fifo's */
 	retval = mrvlqspi_fifo_flush(bank, FIFO_FLUSH_TIMEOUT);
 	if (retval != ERROR_OK)
 		return retval;
@@ -406,7 +417,7 @@ static int mrvlqspi_read_id(struct flash_bank *bank, uint32_t *id)
 
 	LOG_DEBUG("Getting ID");
 
-	/* Flush read/write fifos */
+	/* Flush read/write fifo's */
 	retval = mrvlqspi_fifo_flush(bank, FIFO_FLUSH_TIMEOUT);
 	if (retval != ERROR_OK)
 		return retval;
@@ -516,21 +527,21 @@ static int mrvlqspi_bulk_erase(struct flash_bank *bank)
 	return mrvlqspi_flash_busy_status(bank, CHIP_ERASE_TIMEOUT);
 }
 
-static int mrvlqspi_flash_erase(struct flash_bank *bank, unsigned int first,
-		unsigned int last)
+static int mrvlqspi_flash_erase(struct flash_bank *bank, int first, int last)
 {
 	struct target *target = bank->target;
 	struct mrvlqspi_flash_bank *mrvlqspi_info = bank->driver_priv;
 	int retval = ERROR_OK;
+	int sector;
 
-	LOG_DEBUG("erase from sector %u to sector %u", first, last);
+	LOG_DEBUG("erase from sector %d to sector %d", first, last);
 
 	if (target->state != TARGET_HALTED) {
 		LOG_ERROR("Target not halted");
 		return ERROR_TARGET_NOT_HALTED;
 	}
 
-	if ((last < first) || (last >= bank->num_sectors)) {
+	if ((first < 0) || (last < first) || (last >= bank->num_sectors)) {
 		LOG_ERROR("Flash sector invalid");
 		return ERROR_FLASH_SECTOR_INVALID;
 	}
@@ -540,9 +551,9 @@ static int mrvlqspi_flash_erase(struct flash_bank *bank, unsigned int first,
 		return ERROR_FLASH_BANK_NOT_PROBED;
 	}
 
-	for (unsigned int sector = first; sector <= last; sector++) {
+	for (sector = first; sector <= last; sector++) {
 		if (bank->sectors[sector].is_protected) {
-			LOG_ERROR("Flash sector %u protected", sector);
+			LOG_ERROR("Flash sector %d protected", sector);
 			return ERROR_FAIL;
 		}
 	}
@@ -552,7 +563,7 @@ static int mrvlqspi_flash_erase(struct flash_bank *bank, unsigned int first,
 	if (first == 0 && last == (bank->num_sectors - 1)
 		&& mrvlqspi_info->dev->chip_erase_cmd !=
 					mrvlqspi_info->dev->erase_cmd) {
-		LOG_DEBUG("Chip supports the bulk erase command."
+		LOG_DEBUG("Chip supports the bulk erase command."\
 		" Will use bulk erase instead of sector-by-sector erase.");
 		retval = mrvlqspi_bulk_erase(bank);
 		if (retval == ERROR_OK) {
@@ -565,7 +576,7 @@ static int mrvlqspi_flash_erase(struct flash_bank *bank, unsigned int first,
 	if (mrvlqspi_info->dev->erase_cmd == 0x00)
 		return ERROR_FLASH_OPER_UNSUPPORTED;
 
-	for (unsigned int sector = first; sector <= last; sector++) {
+	for (sector = first; sector <= last; sector++) {
 		retval = mrvlqspi_block_erase(bank,
 				sector * mrvlqspi_info->dev->sectorsize);
 		if (retval != ERROR_OK)
@@ -586,6 +597,7 @@ static int mrvlqspi_flash_write(struct flash_bank *bank, const uint8_t *buffer,
 	struct reg_param reg_params[6];
 	struct armv7m_algorithm armv7m_info;
 	struct working_area *write_algorithm;
+	int sector;
 
 	LOG_DEBUG("offset=0x%08" PRIx32 " count=0x%08" PRIx32,
 		offset, count);
@@ -601,14 +613,14 @@ static int mrvlqspi_flash_write(struct flash_bank *bank, const uint8_t *buffer,
 	}
 
 	/* Check sector protection */
-	for (unsigned int sector = 0; sector < bank->num_sectors; sector++) {
+	for (sector = 0; sector < bank->num_sectors; sector++) {
 		/* Start offset in or before this sector? */
 		/* End offset in or behind this sector? */
 		if ((offset <
 			(bank->sectors[sector].offset + bank->sectors[sector].size))
 			&& ((offset + count - 1) >= bank->sectors[sector].offset)
 			&& bank->sectors[sector].is_protected) {
-			LOG_ERROR("Flash sector %u protected", sector);
+			LOG_ERROR("Flash sector %d protected", sector);
 			return ERROR_FAIL;
 		}
 	}
@@ -669,7 +681,7 @@ static int mrvlqspi_flash_write(struct flash_bank *bank, const uint8_t *buffer,
 
 	if (target_alloc_working_area(target, sizeof(mrvlqspi_flash_write_code),
 			&write_algorithm) != ERROR_OK) {
-		LOG_ERROR("Insufficient working area. You must configure"
+		LOG_ERROR("Insufficient working area. You must configure"\
 			" a working area > %zdB in order to write to SPIFI flash.",
 			sizeof(mrvlqspi_flash_write_code));
 		return ERROR_TARGET_RESOURCE_NOT_AVAILABLE;
@@ -691,15 +703,15 @@ static int mrvlqspi_flash_write(struct flash_bank *bank, const uint8_t *buffer,
 		 * space, free the algorithm */
 		target_free_working_area(target, write_algorithm);
 
-		LOG_ERROR("Insufficient working area. Please allocate at least"
+		LOG_ERROR("Insufficient working area. Please allocate at least"\
 			" %zdB of working area to enable flash writes.",
 			sizeof(mrvlqspi_flash_write_code) + 1
 		);
 
 		return ERROR_TARGET_RESOURCE_NOT_AVAILABLE;
 	} else if (fifo_size < page_size)
-		LOG_WARNING("Working area size is limited; flash writes may be"
-			" slow. Increase working area size to at least %zdB"
+		LOG_WARNING("Working area size is limited; flash writes may be"\
+			" slow. Increase working area size to at least %zdB"\
 			" to reduce write times.",
 			(size_t)(sizeof(mrvlqspi_flash_write_code) + page_size)
 		);
@@ -750,7 +762,7 @@ static int mrvlqspi_flash_write(struct flash_bank *bank, const uint8_t *buffer,
 	return retval;
 }
 
-static int mrvlqspi_flash_read(struct flash_bank *bank, uint8_t *buffer,
+int mrvlqspi_flash_read(struct flash_bank *bank, uint8_t *buffer,
 				uint32_t offset, uint32_t count)
 {
 	struct target *target = bank->target;
@@ -768,7 +780,7 @@ static int mrvlqspi_flash_read(struct flash_bank *bank, uint8_t *buffer,
 		return ERROR_FLASH_BANK_NOT_PROBED;
 	}
 
-	/* Flush read/write fifos */
+	/* Flush read/write fifo's */
 	retval = mrvlqspi_fifo_flush(bank, FIFO_FLUSH_TIMEOUT);
 	if (retval != ERROR_OK)
 		return retval;
@@ -833,7 +845,7 @@ static int mrvlqspi_probe(struct flash_bank *bank)
 		return ERROR_TARGET_NOT_HALTED;
 	}
 
-	mrvlqspi_info->probed = false;
+	mrvlqspi_info->probed = 0;
 	mrvlqspi_info->bank_num = bank->bank_number;
 
 	/* Read flash JEDEC ID */
@@ -871,12 +883,12 @@ static int mrvlqspi_probe(struct flash_bank *bank)
 	/* create and fill sectors array */
 	bank->num_sectors = mrvlqspi_info->dev->size_in_bytes / sectorsize;
 	sectors = malloc(sizeof(struct flash_sector) * bank->num_sectors);
-	if (!sectors) {
+	if (sectors == NULL) {
 		LOG_ERROR("not enough memory");
 		return ERROR_FAIL;
 	}
 
-	for (unsigned int sector = 0; sector < bank->num_sectors; sector++) {
+	for (int sector = 0; sector < bank->num_sectors; sector++) {
 		sectors[sector].offset = sector * sectorsize;
 		sectors[sector].size = sectorsize;
 		sectors[sector].is_erased = -1;
@@ -884,7 +896,7 @@ static int mrvlqspi_probe(struct flash_bank *bank)
 	}
 
 	bank->sectors = sectors;
-	mrvlqspi_info->probed = true;
+	mrvlqspi_info->probed = 1;
 
 	return ERROR_OK;
 }
@@ -903,16 +915,17 @@ static int mrvlqspi_flash_erase_check(struct flash_bank *bank)
 	return ERROR_OK;
 }
 
-static int mrvlqspi_get_info(struct flash_bank *bank, struct command_invocation *cmd)
+int mrvlqspi_get_info(struct flash_bank *bank, char *buf, int buf_size)
 {
 	struct mrvlqspi_flash_bank *mrvlqspi_info = bank->driver_priv;
 
 	if (!(mrvlqspi_info->probed)) {
-		command_print_sameline(cmd, "\nQSPI flash bank not probed yet\n");
+		snprintf(buf, buf_size,
+			"\nQSPI flash bank not probed yet\n");
 		return ERROR_OK;
 	}
 
-	command_print_sameline(cmd, "\nQSPI flash information:\n"
+	snprintf(buf, buf_size, "\nQSPI flash information:\n"
 		"  Device \'%s\' ID 0x%08" PRIx32 "\n",
 		mrvlqspi_info->dev->name, mrvlqspi_info->dev->device_id);
 
@@ -927,7 +940,7 @@ FLASH_BANK_COMMAND_HANDLER(mrvlqspi_flash_bank_command)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
 	mrvlqspi_info = malloc(sizeof(struct mrvlqspi_flash_bank));
-	if (!mrvlqspi_info) {
+	if (mrvlqspi_info == NULL) {
 		LOG_ERROR("not enough memory");
 		return ERROR_FAIL;
 	}
@@ -935,7 +948,7 @@ FLASH_BANK_COMMAND_HANDLER(mrvlqspi_flash_bank_command)
 	/* Get QSPI controller register map base address */
 	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[6], mrvlqspi_info->reg_base);
 	bank->driver_priv = mrvlqspi_info;
-	mrvlqspi_info->probed = false;
+	mrvlqspi_info->probed = 0;
 
 	return ERROR_OK;
 }

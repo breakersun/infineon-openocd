@@ -1,8 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2013 Andes Technology                                   *
  *   Hsiangkai Wang <hkwang@andestech.com>                                 *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -482,7 +493,7 @@ static int nds32_parse_mem(struct nds32 *nds32, uint32_t opcode, uint32_t addres
 			switch (sub_opcode & 0x7) {
 				case 0: /* LB */
 					nds32_parse_type_3(opcode, &(instruction->info.rt),
-							&(instruction->info.ra),
+							&(instruction->info.ra), \
 							&(instruction->info.rb), &(instruction->info.imm));
 					instruction->type = NDS32_INSN_LOAD_STORE;
 					nds32_get_mapped_reg(nds32, instruction->info.ra, &val_ra);
@@ -2838,7 +2849,7 @@ static uint32_t field_mask[9] = {
 
 static uint8_t nds32_extract_field_8u(uint16_t opcode, uint32_t start, uint32_t length)
 {
-	if (length > 0 && length < 9)
+	if (0 < length && length < 9)
 		return (opcode >> start) & field_mask[length];
 
 	return 0;

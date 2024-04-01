@@ -146,3 +146,4 @@ do_version() {
 
 package_info_load
 do_version "$@"
+

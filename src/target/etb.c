@@ -1,8 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2007 by Dominic Rath                                    *
  *   Dominic.Rath@gmx.de                                                   *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -33,7 +44,7 @@ static int etb_set_instr(struct etb *etb, uint32_t new_instr)
 	struct jtag_tap *tap;
 
 	tap = etb->tap;
-	if (!tap)
+	if (tap == NULL)
 		return ERROR_FAIL;
 
 	if (buf_get_u32(tap->cur_instr, 0, tap->ir_length) != new_instr) {
@@ -165,13 +176,13 @@ static int etb_read_ram(struct etb *etb, uint32_t *data, int num_frames)
 	fields[0].in_value = NULL;
 
 	fields[1].num_bits = 7;
-	uint8_t temp1 = 0;
+	uint8_t temp1;
 	fields[1].out_value = &temp1;
 	buf_set_u32(&temp1, 0, 7, 4);
 	fields[1].in_value = NULL;
 
 	fields[2].num_bits = 1;
-	uint8_t temp2 = 0;
+	uint8_t temp2;
 	fields[2].out_value = &temp2;
 	buf_set_u32(&temp2, 0, 1, 0);
 	fields[2].in_value = NULL;
@@ -218,7 +229,7 @@ static int etb_read_reg_w_check(struct reg *reg,
 	fields[0].check_mask = NULL;
 
 	fields[1].num_bits = 7;
-	uint8_t temp1 = 0;
+	uint8_t temp1;
 	fields[1].out_value = &temp1;
 	buf_set_u32(&temp1, 0, 7, reg_addr);
 	fields[1].in_value = NULL;
@@ -226,7 +237,7 @@ static int etb_read_reg_w_check(struct reg *reg,
 	fields[1].check_mask = NULL;
 
 	fields[2].num_bits = 1;
-	uint8_t temp2 = 0;
+	uint8_t temp2;
 	fields[2].out_value = &temp2;
 	buf_set_u32(&temp2, 0, 1, 0);
 	fields[2].in_value = NULL;
@@ -299,13 +310,13 @@ static int etb_write_reg(struct reg *reg, uint32_t value)
 	fields[0].in_value = NULL;
 
 	fields[1].num_bits = 7;
-	uint8_t temp1 = 0;
+	uint8_t temp1;
 	fields[1].out_value = &temp1;
 	buf_set_u32(&temp1, 0, 7, reg_addr);
 	fields[1].in_value = NULL;
 
 	fields[2].num_bits = 1;
-	uint8_t temp2 = 0;
+	uint8_t temp2;
 	fields[2].out_value = &temp2;
 	buf_set_u32(&temp2, 0, 1, 1);
 	fields[2].in_value = NULL;
@@ -333,13 +344,13 @@ COMMAND_HANDLER(handle_etb_config_command)
 
 	arm = target_to_arm(target);
 	if (!is_arm(arm)) {
-		command_print(CMD, "ETB: '%s' isn't an ARM", CMD_ARGV[0]);
+		command_print(CMD_CTX, "ETB: '%s' isn't an ARM", CMD_ARGV[0]);
 		return ERROR_FAIL;
 	}
 
 	tap = jtag_tap_by_string(CMD_ARGV[1]);
-	if (!tap) {
-		command_print(CMD, "ETB: TAP %s does not exist", CMD_ARGV[1]);
+	if (tap == NULL) {
+		command_print(CMD_CTX, "ETB: TAP %s does not exist", CMD_ARGV[1]);
 		return ERROR_FAIL;
 	}
 
@@ -371,17 +382,17 @@ COMMAND_HANDLER(handle_etb_trigger_percent_command)
 	target = get_current_target(CMD_CTX);
 	arm = target_to_arm(target);
 	if (!is_arm(arm)) {
-		command_print(CMD, "ETB: current target isn't an ARM");
+		command_print(CMD_CTX, "ETB: current target isn't an ARM");
 		return ERROR_FAIL;
 	}
 
 	etm = arm->etm;
 	if (!etm) {
-		command_print(CMD, "ETB: target has no ETM configured");
+		command_print(CMD_CTX, "ETB: target has no ETM configured");
 		return ERROR_FAIL;
 	}
 	if (etm->capture_driver != &etb_capture_driver) {
-		command_print(CMD, "ETB: target not using ETB");
+		command_print(CMD_CTX, "ETB: target not using ETB");
 		return ERROR_FAIL;
 	}
 	etb = arm->etm->capture_driver_priv;
@@ -391,13 +402,13 @@ COMMAND_HANDLER(handle_etb_trigger_percent_command)
 
 		COMMAND_PARSE_NUMBER(u32, CMD_ARGV[0], new_value);
 		if ((new_value < 2) || (new_value > 100))
-			command_print(CMD,
+			command_print(CMD_CTX,
 				"valid percentages are 2%% to 100%%");
 		else
 			etb->trigger_percent = (unsigned) new_value;
 	}
 
-	command_print(CMD, "%d percent of tracebuffer fills after trigger",
+	command_print(CMD_CTX, "%d percent of tracebuffer fills after trigger",
 		etb->trigger_percent);
 
 	return ERROR_OK;

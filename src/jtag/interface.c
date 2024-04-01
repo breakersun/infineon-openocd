@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2005 by Dominic Rath                                    *
  *   Dominic.Rath@gmx.de                                                   *
@@ -13,6 +11,19 @@
  *                                                                         *
  *   Copyright (C) 2009 Zachary T Welch                                    *
  *   zw@superlucidity.net                                                  *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -34,7 +45,7 @@ void tap_set_state_impl(tap_state_t new_state)
 	state_follower = new_state;
 }
 
-tap_state_t tap_get_state(void)
+tap_state_t tap_get_state()
 {
 	return state_follower;
 }
@@ -53,7 +64,7 @@ void tap_set_end_state(tap_state_t new_end_state)
 	end_state_follower = new_end_state;
 }
 
-tap_state_t tap_get_end_state(void)
+tap_state_t tap_get_end_state()
 {
 	return end_state_follower;
 }
@@ -177,10 +188,10 @@ static const struct tms_sequences short_tms_seqs[6][6] = { /* [from_state_ndx][t
 /*	RESET		IDLE			DRSHIFT			DRPAUSE			IRSHIFT			IRPAUSE */ /* from state: */
 {B8(1111111, 7), B8(0000000, 7), B8(0010111, 7), B8(0001010, 7), B8(0011011, 7), B8(0010110, 7)}, /* RESET */
 {B8(1111111, 7), B8(0000000, 7), B8(001, 3),	 B8(0101, 4),	 B8(0011, 4),	 B8(01011, 5)}, /* IDLE */
-{B8(1111111, 7), B8(011, 3),	 B8(00111, 5),	 B8(01, 2),		 B8(001111, 6),	 B8(0101111, 7)}, /* DRSHIFT */
-{B8(1111111, 7), B8(011, 3),	 B8(01, 2),		 B8(0, 1),		 B8(001111, 6),	 B8(0101111, 7)}, /* DRPAUSE */
-{B8(1111111, 7), B8(011, 3),	 B8(00111, 5),	 B8(010111, 6),	 B8(001111, 6),	 B8(01, 2)}, /* IRSHIFT */
-{B8(1111111, 7), B8(011, 3),	 B8(00111, 5),	 B8(010111, 6),	 B8(01, 2),		 B8(0, 1)} /* IRPAUSE */
+{B8(1111111, 7), B8(0000011, 7),	 B8(00111, 5),	 B8(01, 2),		 B8(001111, 6),	 B8(0101111, 7)}, /* DRSHIFT */
+{B8(1111111, 7), B8(0000011, 7),	 B8(01, 2),		 B8(0, 1),		 B8(001111, 6),	 B8(0101111, 7)}, /* DRPAUSE */
+{B8(1111111, 7), B8(0000011, 7),	 B8(00111, 5),	 B8(010111, 6),	 B8(001111, 6),	 B8(01, 2)}, /* IRSHIFT */
+{B8(1111111, 7), B8(0000011, 7),	 B8(00111, 5),	 B8(010111, 6),	 B8(01, 2),		 B8(0, 1)} /* IRPAUSE */
 };
 
 typedef const struct tms_sequences tms_table[6][6];
@@ -365,13 +376,15 @@ tap_state_t tap_state_by_name(const char *name)
 	return TAP_INVALID;
 }
 
+#ifdef _DEBUG_JTAG_IO_
+
 #define JTAG_DEBUG_STATE_APPEND(buf, len, bit) \
 	do { buf[len] = bit ? '1' : '0'; } while (0)
 #define JTAG_DEBUG_STATE_PRINT(a, b, astr, bstr) \
-	LOG_DEBUG_IO("TAP/SM: %9s -> %5s\tTMS: %s\tTDI: %s", \
+	DEBUG_JTAG_IO("TAP/SM: %9s -> %5s\tTMS: %s\tTDI: %s", \
 	tap_state_name(a), tap_state_name(b), astr, bstr)
 
-tap_state_t jtag_debug_state_machine_(const void *tms_buf, const void *tdi_buf,
+tap_state_t jtag_debug_state_machine(const void *tms_buf, const void *tdi_buf,
 	unsigned tap_bits, tap_state_t next_state)
 {
 	const uint8_t *tms_buffer;
@@ -388,13 +401,13 @@ tap_state_t jtag_debug_state_machine_(const void *tms_buf, const void *tdi_buf,
 
 	/* set startstate (and possibly last, if tap_bits == 0) */
 	last_state = next_state;
-	LOG_DEBUG_IO("TAP/SM: START state: %s", tap_state_name(next_state));
+	DEBUG_JTAG_IO("TAP/SM: START state: %s", tap_state_name(next_state));
 
 	tms_buffer = (const uint8_t *)tms_buf;
 	tdi_buffer = (const uint8_t *)tdi_buf;
 
 	tap_bytes = DIV_ROUND_UP(tap_bits, 8);
-	LOG_DEBUG_IO("TAP/SM: TMS bits: %u (bytes: %u)", tap_bits, tap_bytes);
+	DEBUG_JTAG_IO("TAP/SM: TMS bits: %u (bytes: %u)", tap_bits, tap_bytes);
 
 	tap_out_bits = 0;
 	for (cur_byte = 0; cur_byte < tap_bytes; cur_byte++) {
@@ -439,10 +452,11 @@ tap_state_t jtag_debug_state_machine_(const void *tms_buf, const void *tdi_buf,
 		JTAG_DEBUG_STATE_PRINT(last_state, next_state, tms_str, tdi_str);
 	}
 
-	LOG_DEBUG_IO("TAP/SM: FINAL state: %s", tap_state_name(next_state));
+	DEBUG_JTAG_IO("TAP/SM: FINAL state: %s", tap_state_name(next_state));
 
 	return next_state;
 }
+#endif	/* _DEBUG_JTAG_IO_ */
 
 void tap_use_new_tms_table(bool use_new)
 {

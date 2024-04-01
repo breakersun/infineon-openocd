@@ -1,7 +1,18 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
-
 /***************************************************************************
  *    Copyright (C) 2009 by David Brownell                                 *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifndef OPENOCD_TARGET_ARMV7A_H
@@ -19,7 +30,7 @@ enum {
 	ARM_CPSR = 16
 };
 
-#define ARMV7_COMMON_MAGIC 0x0A450999U
+#define ARMV7_COMMON_MAGIC 0x0A450999
 
 /* VA to PA translation operations opc2 values*/
 #define V2PCWPR  0
@@ -37,7 +48,7 @@ struct armv7a_l2x_cache {
 };
 
 struct armv7a_cachesize {
-	/*  cache dimensioning */
+	/*  cache dimensionning */
 	uint32_t linelen;
 	uint32_t associativity;
 	uint32_t nsets;
@@ -87,19 +98,16 @@ struct armv7a_mmu_common {
 };
 
 struct armv7a_common {
-	unsigned int common_magic;
-
 	struct arm arm;
+	int common_magic;
 	struct reg_cache *core_cache;
 
 	/* Core Debug Unit */
 	struct arm_dpm dpm;
-	target_addr_t debug_base;
+	uint32_t debug_base;
 	struct adiv5_ap *debug_ap;
 	/* mdir */
 	uint8_t multi_processor_system;
-	uint8_t multi_threading_processor;
-	uint8_t level2_id;
 	uint8_t cluster_id;
 	uint8_t cpu_id;
 	bool is_armv7r;
@@ -168,9 +176,6 @@ static inline bool is_armv7a(struct armv7a_common *armv7a)
 /* See ARMv7a arch spec section C10.8 */
 #define CPUDBG_AUTHSTATUS	0xFB8
 
-/* See ARMv7a arch spec DDI 0406C C11.10 */
-#define CPUDBG_ID_PFR1		0xD24
-
 /* Masks for Vector Catch register */
 #define DBG_VCR_FIQ_MASK	((1 << 31) | (1 << 7))
 #define DBG_VCR_IRQ_MASK	((1 << 30) | (1 << 6))
@@ -178,14 +183,11 @@ static inline bool is_armv7a(struct armv7a_common *armv7a)
 #define DBG_VCR_PREF_ABORT_MASK	((1 << 27) | (1 << 3))
 #define DBG_VCR_SVC_MASK	((1 << 26) | (1 << 2))
 
-/* Masks for Multiprocessor Affinity Register */
-#define MPIDR_MP_EXT		(1UL << 31)
-
 int armv7a_arch_state(struct target *target);
 int armv7a_identify_cache(struct target *target);
 int armv7a_init_arch_info(struct target *target, struct armv7a_common *armv7a);
 
-int armv7a_handle_cache_info_command(struct command_invocation *cmd,
+int armv7a_handle_cache_info_command(struct command_context *cmd_ctx,
 		struct armv7a_cache_common *armv7a_cache);
 int armv7a_read_ttbcr(struct target *target);
 

@@ -1,8 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2008 by			                                       *
  *   Karl RobinSod <karl.robinsod@gmail.com>                               *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 /***************************************************************************
@@ -221,17 +232,17 @@ static uint32_t lpc288x_system_ready(struct flash_bank *bank)
 	return ERROR_OK;
 }
 
-static int lpc288x_erase(struct flash_bank *bank, unsigned int first,
-		unsigned int last)
+static int lpc288x_erase(struct flash_bank *bank, int first, int last)
 {
 	uint32_t status;
+	int sector;
 	struct target *target = bank->target;
 
 	status = lpc288x_system_ready(bank);	/* probed? halted? */
 	if (status != ERROR_OK)
 		return status;
 
-	if ((last < first) || (last >= bank->num_sectors)) {
+	if ((first < 0) || (last < first) || (last >= bank->num_sectors)) {
 		LOG_INFO("Bad sector range");
 		return ERROR_FLASH_SECTOR_INVALID;
 	}
@@ -239,7 +250,7 @@ static int lpc288x_erase(struct flash_bank *bank, unsigned int first,
 	/* Configure the flash controller timing */
 	lpc288x_set_flash_clk(bank);
 
-	for (unsigned int sector = first; sector <= last; sector++) {
+	for (sector = first; sector <= last; sector++) {
 		if (lpc288x_wait_status_busy(bank, 1000) != ERROR_OK)
 			return ERROR_FLASH_OPERATION_FAILED;
 
@@ -261,6 +272,7 @@ static int lpc288x_write(struct flash_bank *bank, const uint8_t *buffer, uint32_
 	struct target *target = bank->target;
 	uint32_t bytes_remaining = count;
 	uint32_t first_sector, last_sector, sector, page;
+	int i;
 
 	/* probed? halted? */
 	status = lpc288x_system_ready(bank);
@@ -271,7 +283,7 @@ static int lpc288x_write(struct flash_bank *bank, const uint8_t *buffer, uint32_
 	first_sector = last_sector = 0xffffffff;
 
 	/* validate the write range... */
-	for (unsigned int i = 0; i < bank->num_sectors; i++) {
+	for (i = 0; i < bank->num_sectors; i++) {
 		if ((offset >= bank->sectors[i].offset) &&
 				(offset < (bank->sectors[i].offset + bank->sectors[i].size)) &&
 				(first_sector == 0xffffffff)) {
@@ -367,10 +379,9 @@ static int lpc288x_probe(struct flash_bank *bank)
 	return ERROR_OK;
 }
 
-static int lpc288x_protect(struct flash_bank *bank, int set, unsigned int first,
-		unsigned int last)
+static int lpc288x_protect(struct flash_bank *bank, int set, int first, int last)
 {
-	int status;
+	int lockregion, status;
 	uint32_t value;
 	struct target *target = bank->target;
 
@@ -379,18 +390,18 @@ static int lpc288x_protect(struct flash_bank *bank, int set, unsigned int first,
 	if (status != ERROR_OK)
 		return status;
 
-	if ((last < first) || (last >= bank->num_sectors))
+	if ((first < 0) || (last < first) || (last >= bank->num_sectors))
 		return ERROR_FLASH_SECTOR_INVALID;
 
 	/* Configure the flash controller timing */
 	lpc288x_set_flash_clk(bank);
 
-	for (unsigned int lockregion = first; lockregion <= last; lockregion++) {
+	for (lockregion = first; lockregion <= last; lockregion++) {
 		if (set) {
-			/* write an odd value to base address to protect... */
+			/* write an odd value to base addy to protect... */
 			value = 0x01;
 		} else {
-			/* write an even value to base address to unprotect... */
+			/* write an even value to base addy to unprotect... */
 			value = 0x00;
 		}
 		target_write_u32(target, bank->sectors[lockregion].offset, value);

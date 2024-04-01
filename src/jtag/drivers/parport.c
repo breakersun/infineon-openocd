@@ -1,18 +1,28 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2005 by Dominic Rath                                    *
  *   Dominic.Rath@gmx.de                                                   *
  *                                                                         *
  *   Copyright (C) 2008 by Spencer Oliver                                  *
  *   spen@spen-soft.co.uk                                                  *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
 
-#include <jtag/adapter.h>
 #include <jtag/interface.h>
 #include "bitbang.h"
 
@@ -227,7 +237,7 @@ static int parport_get_giveio_access(void)
 	HANDLE h;
 	OSVERSIONINFO version;
 
-	version.dwOSVersionInfoSize = sizeof(version);
+	version.dwOSVersionInfoSize = sizeof version;
 	if (!GetVersionEx(&version)) {
 		errno = EINVAL;
 		return -1;
@@ -250,6 +260,7 @@ static int parport_get_giveio_access(void)
 static struct bitbang_interface parport_bitbang = {
 		.read = &parport_read,
 		.write = &parport_write,
+		.reset = &parport_reset,
 		.blink = &parport_led,
 	};
 
@@ -262,7 +273,7 @@ static int parport_init(void)
 
 	cur_cable = cables;
 
-	if (!parport_cable) {
+	if (parport_cable == NULL) {
 		parport_cable = strdup("wiggler");
 		LOG_WARNING("No parport cable specified, using default 'wiggler'");
 	}
@@ -382,8 +393,10 @@ static int parport_quit(void)
 		parport_write_data();
 	}
 
-	free(parport_cable);
-	parport_cable = NULL;
+	if (parport_cable) {
+		free(parport_cable);
+		parport_cable = NULL;
+	}
 
 	return ERROR_OK;
 }
@@ -400,7 +413,7 @@ COMMAND_HANDLER(parport_handle_parport_port_command)
 		}
 	}
 
-	command_print(CMD, "parport port = 0x%" PRIx16 "", parport_port);
+	command_print(CMD_CTX, "parport port = 0x%" PRIx16 "", parport_port);
 
 	return ERROR_OK;
 }
@@ -438,7 +451,7 @@ COMMAND_HANDLER(parport_handle_parport_toggling_time_command)
 		uint32_t ns;
 		int retval = parse_u32(CMD_ARGV[0], &ns);
 
-		if (retval != ERROR_OK)
+		if (ERROR_OK != retval)
 			return retval;
 
 		if (ns == 0) {
@@ -447,9 +460,9 @@ COMMAND_HANDLER(parport_handle_parport_toggling_time_command)
 		}
 
 		parport_toggling_time_ns = ns;
-		retval = adapter_get_speed(&wait_states);
+		retval = jtag_get_speed(&wait_states);
 		if (retval != ERROR_OK) {
-			/* if adapter_get_speed fails then the clock_mode
+			/* if jtag_get_speed fails then the clock_mode
 			 * has not been configured, this happens if parport_toggling_time is
 			 * called before the adapter speed is set */
 			LOG_INFO("no parport speed set - defaulting to zero wait states");
@@ -457,15 +470,15 @@ COMMAND_HANDLER(parport_handle_parport_toggling_time_command)
 		}
 	}
 
-	command_print(CMD, "parport toggling time = %" PRIu32 " ns",
+	command_print(CMD_CTX, "parport toggling time = %" PRIu32 " ns",
 			parport_toggling_time_ns);
 
 	return ERROR_OK;
 }
 
-static const struct command_registration parport_subcommand_handlers[] = {
+static const struct command_registration parport_command_handlers[] = {
 	{
-		.name = "port",
+		.name = "parport_port",
 		.handler = parport_handle_parport_port_command,
 		.mode = COMMAND_CONFIG,
 		.help = "Display the address of the I/O port (e.g. 0x378) "
@@ -474,7 +487,7 @@ static const struct command_registration parport_subcommand_handlers[] = {
 		.usage = "[port_number]",
 	},
 	{
-		.name = "cable",
+		.name = "parport_cable",
 		.handler = parport_handle_parport_cable_command,
 		.mode = COMMAND_CONFIG,
 		.help = "Set the layout of the parallel port cable "
@@ -483,7 +496,7 @@ static const struct command_registration parport_subcommand_handlers[] = {
 		.usage = "[layout]",
 	},
 	{
-		.name = "write_on_exit",
+		.name = "parport_write_on_exit",
 		.handler = parport_handle_write_on_exit_command,
 		.mode = COMMAND_CONFIG,
 		.help = "Configure the parallel driver to write "
@@ -491,7 +504,7 @@ static const struct command_registration parport_subcommand_handlers[] = {
 		.usage = "('on'|'off')",
 	},
 	{
-		.name = "toggling_time",
+		.name = "parport_toggling_time",
 		.handler = parport_handle_parport_toggling_time_command,
 		.mode = COMMAND_CONFIG,
 		.help = "Displays or assigns how many nanoseconds it "
@@ -501,33 +514,15 @@ static const struct command_registration parport_subcommand_handlers[] = {
 	COMMAND_REGISTRATION_DONE
 };
 
-static const struct command_registration parport_command_handlers[] = {
-	{
-		.name = "parport",
-		.mode = COMMAND_ANY,
-		.help = "perform parport management",
-		.chain = parport_subcommand_handlers,
-		.usage = "",
-	},
-	COMMAND_REGISTRATION_DONE
-};
-
-static struct jtag_interface parport_interface = {
-	.supported = DEBUG_CAP_TMS_SEQ,
-	.execute_queue = bitbang_execute_queue,
-};
-
-struct adapter_driver parport_adapter_driver = {
+struct jtag_interface parport_interface = {
 	.name = "parport",
-	.transports = jtag_only,
+	.supported = DEBUG_CAP_TMS_SEQ,
 	.commands = parport_command_handlers,
 
 	.init = parport_init,
 	.quit = parport_quit,
-	.reset = parport_reset,
-	.speed = parport_speed,
 	.khz = parport_khz,
 	.speed_div = parport_speed_div,
-
-	.jtag_ops = &parport_interface,
+	.speed = parport_speed,
+	.execute_queue = bitbang_execute_queue,
 };

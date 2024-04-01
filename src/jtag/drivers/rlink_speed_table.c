@@ -98,3 +98,4 @@ const struct rlink_speed_table rlink_speed_table[] = {{
 } };
 
 const size_t rlink_speed_table_size = ARRAY_SIZE(rlink_speed_table);
+

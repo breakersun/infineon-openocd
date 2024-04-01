@@ -41,10 +41,8 @@ if head=`git rev-parse --verify --short HEAD 2>/dev/null`; then
 	[ -w . ] && git update-index --refresh --unmerged > /dev/null
 
 	# Check for uncommitted changes
-	# If jimtcl bootstraps during configuration it can leave untracked files.
-	if git diff-index --name-only --ignore-submodules=untracked HEAD \
-		| grep -v "^scripts/package" \
-		| read dummy; then
+	if git diff-index --name-only HEAD | grep -v "^scripts/package" \
+	    | read dummy; then
 		printf '%s' -dirty
 	fi
 
@@ -81,5 +79,5 @@ if rev=`svn info 2>/dev/null | grep '^Last Changed Rev'`; then
 	exit
 fi
 
-# There's no recognized repository; we must be a snapshot.
+# There's no reecognized repository; we must be a snapshot.
 printf -- '-snapshot'

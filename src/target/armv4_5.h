@@ -1,5 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
-
 /***************************************************************************
  *   Copyright (C) 2005 by Dominic Rath                                    *
  *   Dominic.Rath@gmx.de                                                   *
@@ -9,6 +7,19 @@
  *                                                                         *
  *   Copyright (C) 2009 by Øyvind Harboe                                   *
  *   oyvind.harboe@zylin.com                                               *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifndef OPENOCD_TARGET_ARMV4_5_H
@@ -27,7 +38,7 @@
 int arm_mode_to_number(enum arm_mode mode);
 enum arm_mode armv4_5_number_to_mode(int number);
 
-extern const int armv4_5_core_reg_map[9][17];
+extern const int armv4_5_core_reg_map[8][17];
 
 #define ARMV4_5_CORE_REG_MODE(cache, mode, num) \
 		(cache->reg_list[armv4_5_core_reg_map[arm_mode_to_number(mode)][num]])

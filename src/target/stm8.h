@@ -1,9 +1,20 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
-
 /*
-*   OpenOCD STM8 target driver
-*   Copyright (C) 2017  Ake Rehnman
-*   ake.rehnman(at)gmail.com
+    OpenOCD STM8 target driver
+    Copyright (C) 2017  Ake Rehnman
+    ake.rehnman(at)gmail.com
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #ifndef OPENOCD_TARGET_STM8_H
@@ -11,12 +22,11 @@
 
 struct target;
 
-#define STM8_COMMON_MAGIC	0x53544D38U
+#define STM8_COMMON_MAGIC	0x53544D38
 #define STM8_NUM_CORE_REGS 6
 
 struct stm8_common {
-	unsigned int common_magic;
-
+	uint32_t common_magic;
 	void *arch_info;
 	struct reg_cache *core_cache;
 	uint32_t core_regs[STM8_NUM_CORE_REGS];
@@ -59,5 +69,7 @@ target_to_stm8(struct target *target)
 {
 	return target->arch_info;
 }
+
+const struct command_registration stm8_command_handlers[];
 
 #endif /* OPENOCD_TARGET_STM8_H */

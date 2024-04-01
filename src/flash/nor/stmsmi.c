@@ -1,7 +1,18 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2010 by Antonio Borneo <borneo.antonio@gmail.com>       *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 /* STM Serial Memory Interface (SMI) controller is a SPI bus controller
@@ -30,33 +41,34 @@
 #include <jtag/jtag.h>
 #include <helper/time_support.h>
 
-#define SMI_READ_REG(a)				\
-({									\
-	int _ret;						\
-	uint32_t _value;				\
+#define SMI_READ_REG(a) (_SMI_READ_REG(a))
+#define _SMI_READ_REG(a)			\
+{									\
+	int __a;						\
+	uint32_t __v;					\
 									\
-	_ret = target_read_u32(target, io_base + (a), &_value); \
-	if (_ret != ERROR_OK)			\
-		return _ret;				\
-	_value;							\
-})
+	__a = target_read_u32(target, io_base + (a), &__v); \
+	if (__a != ERROR_OK)			\
+		return __a;					\
+	__v;							\
+}
 
 #define SMI_WRITE_REG(a, v)			\
 {									\
-	int _retval;					\
+	int __r;						\
 									\
-	_retval = target_write_u32(target, io_base + (a), (v)); \
-	if (_retval != ERROR_OK)		\
-		return _retval;				\
+	__r = target_write_u32(target, io_base + (a), (v)); \
+	if (__r != ERROR_OK)			\
+		return __r;					\
 }
 
 #define SMI_POLL_TFF(timeout)		\
 {									\
-	int _retval;					\
+	int __r;						\
 									\
-	_retval = poll_tff(target, io_base, timeout); \
-	if (_retval != ERROR_OK)		\
-		return _retval;				\
+	__r = poll_tff(target, io_base, timeout); \
+	if (__r != ERROR_OK)			\
+		return __r;					\
 }
 
 #define SMI_SET_SW_MODE()	SMI_WRITE_REG(SMI_CR1, \
@@ -103,7 +115,7 @@
 #define SMI_MAX_TIMEOUT  (3000)
 
 struct stmsmi_flash_bank {
-	bool probed;
+	int probed;
 	uint32_t io_base;
 	uint32_t bank_num;
 	const struct flash_device *dev;
@@ -133,13 +145,13 @@ FLASH_BANK_COMMAND_HANDLER(stmsmi_flash_bank_command)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
 	stmsmi_info = malloc(sizeof(struct stmsmi_flash_bank));
-	if (!stmsmi_info) {
+	if (stmsmi_info == NULL) {
 		LOG_ERROR("not enough memory");
 		return ERROR_FAIL;
 	}
 
 	bank->driver_priv = stmsmi_info;
-	stmsmi_info->probed = false;
+	stmsmi_info->probed = 0;
 
 	return ERROR_OK;
 }
@@ -301,22 +313,22 @@ static int smi_erase_sector(struct flash_bank *bank, int sector)
 	return ERROR_OK;
 }
 
-static int stmsmi_erase(struct flash_bank *bank, unsigned int first,
-		unsigned int last)
+static int stmsmi_erase(struct flash_bank *bank, int first, int last)
 {
 	struct target *target = bank->target;
 	struct stmsmi_flash_bank *stmsmi_info = bank->driver_priv;
 	uint32_t io_base = stmsmi_info->io_base;
 	int retval = ERROR_OK;
+	int sector;
 
-	LOG_DEBUG("%s: from sector %u to sector %u", __func__, first, last);
+	LOG_DEBUG("%s: from sector %d to sector %d", __func__, first, last);
 
 	if (target->state != TARGET_HALTED) {
 		LOG_ERROR("Target not halted");
 		return ERROR_TARGET_NOT_HALTED;
 	}
 
-	if ((last < first) || (last >= bank->num_sectors)) {
+	if ((first < 0) || (last < first) || (last >= bank->num_sectors)) {
 		LOG_ERROR("Flash sector invalid");
 		return ERROR_FLASH_SECTOR_INVALID;
 	}
@@ -326,9 +338,9 @@ static int stmsmi_erase(struct flash_bank *bank, unsigned int first,
 		return ERROR_FLASH_BANK_NOT_PROBED;
 	}
 
-	for (unsigned int sector = first; sector <= last; sector++) {
+	for (sector = first; sector <= last; sector++) {
 		if (bank->sectors[sector].is_protected) {
-			LOG_ERROR("Flash sector %u protected", sector);
+			LOG_ERROR("Flash sector %d protected", sector);
 			return ERROR_FAIL;
 		}
 	}
@@ -336,7 +348,7 @@ static int stmsmi_erase(struct flash_bank *bank, unsigned int first,
 	if (stmsmi_info->dev->erase_cmd == 0x00)
 		return ERROR_FLASH_OPER_UNSUPPORTED;
 
-	for (unsigned int sector = first; sector <= last; sector++) {
+	for (sector = first; sector <= last; sector++) {
 		retval = smi_erase_sector(bank, sector);
 		if (retval != ERROR_OK)
 			break;
@@ -349,9 +361,11 @@ static int stmsmi_erase(struct flash_bank *bank, unsigned int first,
 }
 
 static int stmsmi_protect(struct flash_bank *bank, int set,
-		unsigned int first, unsigned int last)
+	int first, int last)
 {
-	for (unsigned int sector = first; sector <= last; sector++)
+	int sector;
+
+	for (sector = first; sector <= last; sector++)
 		bank->sectors[sector].is_protected = set;
 	return ERROR_OK;
 }
@@ -388,6 +402,7 @@ static int stmsmi_write(struct flash_bank *bank, const uint8_t *buffer,
 	struct stmsmi_flash_bank *stmsmi_info = bank->driver_priv;
 	uint32_t io_base = stmsmi_info->io_base;
 	uint32_t cur_count, page_size, page_offset;
+	int sector;
 	int retval = ERROR_OK;
 
 	LOG_DEBUG("%s: offset=0x%08" PRIx32 " count=0x%08" PRIx32,
@@ -404,14 +419,14 @@ static int stmsmi_write(struct flash_bank *bank, const uint8_t *buffer,
 	}
 
 	/* Check sector protection */
-	for (unsigned int sector = 0; sector < bank->num_sectors; sector++) {
+	for (sector = 0; sector < bank->num_sectors; sector++) {
 		/* Start offset in or before this sector? */
 		/* End offset in or behind this sector? */
 		if ((offset <
 				(bank->sectors[sector].offset + bank->sectors[sector].size))
 			&& ((offset + count - 1) >= bank->sectors[sector].offset)
 			&& bank->sectors[sector].is_protected) {
-			LOG_ERROR("Flash sector %u protected", sector);
+			LOG_ERROR("Flash sector %d protected", sector);
 			return ERROR_FAIL;
 		}
 	}
@@ -519,7 +534,7 @@ static int stmsmi_probe(struct flash_bank *bank)
 
 	if (stmsmi_info->probed)
 		free(bank->sectors);
-	stmsmi_info->probed = false;
+	stmsmi_info->probed = 0;
 
 	for (target_device = target_devices ; target_device->name ; ++target_device)
 		if (target_device->tap_idcode == target->tap->idcode)
@@ -589,12 +604,12 @@ static int stmsmi_probe(struct flash_bank *bank)
 	bank->num_sectors =
 		stmsmi_info->dev->size_in_bytes / sectorsize;
 	sectors = malloc(sizeof(struct flash_sector) * bank->num_sectors);
-	if (!sectors) {
+	if (sectors == NULL) {
 		LOG_ERROR("not enough memory");
 		return ERROR_FAIL;
 	}
 
-	for (unsigned int sector = 0; sector < bank->num_sectors; sector++) {
+	for (int sector = 0; sector < bank->num_sectors; sector++) {
 		sectors[sector].offset = sector * sectorsize;
 		sectors[sector].size = sectorsize;
 		sectors[sector].is_erased = -1;
@@ -602,7 +617,7 @@ static int stmsmi_probe(struct flash_bank *bank)
 	}
 
 	bank->sectors = sectors;
-	stmsmi_info->probed = true;
+	stmsmi_info->probed = 1;
 	return ERROR_OK;
 }
 
@@ -620,16 +635,17 @@ static int stmsmi_protect_check(struct flash_bank *bank)
 	return ERROR_OK;
 }
 
-static int get_stmsmi_info(struct flash_bank *bank, struct command_invocation *cmd)
+static int get_stmsmi_info(struct flash_bank *bank, char *buf, int buf_size)
 {
 	struct stmsmi_flash_bank *stmsmi_info = bank->driver_priv;
 
 	if (!(stmsmi_info->probed)) {
-		command_print_sameline(cmd, "\nSMI flash bank not probed yet\n");
+		snprintf(buf, buf_size,
+			"\nSMI flash bank not probed yet\n");
 		return ERROR_OK;
 	}
 
-	command_print_sameline(cmd, "\nSMI flash information:\n"
+	snprintf(buf, buf_size, "\nSMI flash information:\n"
 		"  Device \'%s\' (ID 0x%08" PRIx32 ")\n",
 		stmsmi_info->dev->name, stmsmi_info->dev->device_id);
 

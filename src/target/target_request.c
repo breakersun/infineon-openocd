@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2007 by Dominic Rath                                    *
  *   Dominic.Rath@gmx.de                                                   *
@@ -9,6 +7,19 @@
  *                                                                         *
  *   Copyright (C) 2008 by Spencer Oliver                                  *
  *   spen@spen-soft.co.uk                                                  *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -45,7 +56,7 @@ static int target_asciimsg(struct target *target, uint32_t length)
 	LOG_DEBUG("%s", msg);
 
 	while (c) {
-		command_output_text(c->cmd_ctx, msg);
+		command_print(c->cmd_ctx, "%s", msg);
 		c = c->next;
 	}
 
@@ -89,7 +100,7 @@ static int target_hexmsg(struct target *target, int size, uint32_t length)
 			LOG_DEBUG("%s", line);
 
 			while (c) {
-				command_output_text(c->cmd_ctx, line);
+				command_print(c->cmd_ctx, "%s", line);
 				c = c->next;
 			}
 			c = target->dbgmsg;
@@ -147,7 +158,7 @@ static int add_debug_msg_receiver(struct command_context *cmd_ctx, struct target
 {
 	struct debug_msg_receiver **p = &target->dbgmsg;
 
-	if (!target)
+	if (target == NULL)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
 	/* see if there's already a list */
@@ -175,9 +186,9 @@ static struct debug_msg_receiver *find_debug_msg_receiver(struct command_context
 	int do_all_targets = 0;
 
 	/* if no target has been specified search all of them */
-	if (!target) {
+	if (target == NULL) {
 		/* if no targets haven been specified */
-		if (!all_targets)
+		if (all_targets == NULL)
 			return NULL;
 
 		target = all_targets;
@@ -206,9 +217,9 @@ int delete_debug_msg_receiver(struct command_context *cmd_ctx, struct target *ta
 	int do_all_targets = 0;
 
 	/* if no target has been specified search all of them */
-	if (!target) {
+	if (target == NULL) {
 		/* if no targets haven been specified */
-		if (!all_targets)
+		if (all_targets == NULL)
 			return ERROR_OK;
 
 		target = all_targets;
@@ -223,7 +234,7 @@ int delete_debug_msg_receiver(struct command_context *cmd_ctx, struct target *ta
 			if (c->cmd_ctx == cmd_ctx) {
 				*p = next;
 				free(c);
-				if (!*p) {
+				if (*p == NULL) {
 					/* disable callback */
 					target->dbg_msg_enabled = 0;
 				}
@@ -245,13 +256,13 @@ COMMAND_HANDLER(handle_target_request_debugmsgs_command)
 
 	int receiving = 0;
 
-	if (!target->type->target_request_data) {
+	if (target->type->target_request_data == NULL) {
 		LOG_ERROR("Target %s does not support target requests", target_name(target));
 		return ERROR_OK;
 	}
 
-	/* see if receiver is already registered */
-	if (find_debug_msg_receiver(CMD_CTX, target))
+	/* see if reciever is already registered */
+	if (find_debug_msg_receiver(CMD_CTX, target) != NULL)
 		receiving = 1;
 
 	if (CMD_ARGC > 0) {
@@ -272,7 +283,7 @@ COMMAND_HANDLER(handle_target_request_debugmsgs_command)
 			return ERROR_COMMAND_SYNTAX_ERROR;
 	}
 
-	command_print(CMD, "receiving debug messages from current target %s",
+	command_print(CMD_CTX, "receiving debug messages from current target %s",
 			(receiving) ? (charmsg_mode ? "charmsg" : "enabled") : "disabled");
 	return ERROR_OK;
 }

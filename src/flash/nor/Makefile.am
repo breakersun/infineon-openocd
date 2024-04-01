@@ -1,6 +1,8 @@
-# SPDX-License-Identifier: GPL-2.0-or-later
-
 noinst_LTLIBRARIES += %D%/libocdflashnor.la
+
+%C%_libocdflashnor_la_LIBADD = \
+	%D%/mxs40/libocdflashnormxs40.la 
+
 %C%_libocdflashnor_la_SOURCES = \
 	%D%/core.c \
 	%D%/tcl.c \
@@ -24,7 +26,9 @@ NOR_DRIVERS = \
 	%D%/bluenrg-x.c \
 	%D%/cc3220sf.c \
 	%D%/cc26xx.c \
+	%D%/cmsis_flash.c \
 	%D%/cfi.c \
+	%D%/cmspi.c \
 	%D%/dsp5680xx_flash.c \
 	%D%/efm32.c \
 	%D%/em357.c \
@@ -46,7 +50,6 @@ NOR_DRIVERS = \
 	%D%/mrvlqspi.c \
 	%D%/niietcm4.c \
 	%D%/non_cfi.c \
-	%D%/npcx.c \
 	%D%/nrf5.c \
 	%D%/numicro.c \
 	%D%/ocl.c \
@@ -54,15 +57,10 @@ NOR_DRIVERS = \
 	%D%/psoc4.c \
 	%D%/psoc5lp.c \
 	%D%/psoc6.c \
-	%D%/renesas_rpchf.c \
-	%D%/rp2040.c \
-	%D%/rsl10.c \
 	%D%/sfdp.c \
-	%D%/sh_qspi.c \
 	%D%/sim3x.c \
 	%D%/spi.c \
 	%D%/stmsmi.c \
-	%D%/stmqspi.c \
 	%D%/stellaris.c \
 	%D%/stm32f1x.c \
 	%D%/stm32f2x.c \
@@ -72,7 +70,6 @@ NOR_DRIVERS = \
 	%D%/str7x.c \
 	%D%/str9x.c \
 	%D%/str9xpec.c \
-	%D%/swm050.c \
 	%D%/tms470.c \
 	%D%/virtual.c \
 	%D%/w600.c \
@@ -83,15 +80,15 @@ NOR_DRIVERS = \
 NORHEADERS = \
 	%D%/core.h \
 	%D%/cc3220sf.h \
-	%D%/bluenrg-x.h \
 	%D%/cc26xx.h \
 	%D%/cfi.h \
+	%D%/cmspi.h \
 	%D%/driver.h \
 	%D%/imp.h \
 	%D%/non_cfi.h \
 	%D%/ocl.h \
 	%D%/sfdp.h \
 	%D%/spi.h \
-	%D%/stm32l4x.h \
-	%D%/stmqspi.h \
 	%D%/msp432.h
+
+include %D%/mxs40/Makefile.am

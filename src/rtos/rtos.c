@@ -1,8 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2011 by Broadcom Corporation                            *
  *   Evan Hunter - ehunter@broadcom.com                                    *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -16,39 +27,32 @@
 #include "server/gdb_server.h"
 
 /* RTOSs */
-extern struct rtos_type freertos_rtos;
-extern struct rtos_type threadx_rtos;
-extern struct rtos_type ecos_rtos;
-extern struct rtos_type linux_rtos;
-extern struct rtos_type chibios_rtos;
+extern struct rtos_type FreeRTOS_rtos;
+extern struct rtos_type ThreadX_rtos;
+extern struct rtos_type eCos_rtos;
+extern struct rtos_type Linux_os;
+extern struct rtos_type ChibiOS_rtos;
 extern struct rtos_type chromium_ec_rtos;
-extern struct rtos_type embkernel_rtos;
+extern struct rtos_type embKernel_rtos;
 extern struct rtos_type mqx_rtos;
-extern struct rtos_type ucos_iii_rtos;
+extern struct rtos_type uCOS_III_rtos;
 extern struct rtos_type nuttx_rtos;
 extern struct rtos_type hwthread_rtos;
-extern struct rtos_type riot_rtos;
-extern struct rtos_type zephyr_rtos;
 
 static struct rtos_type *rtos_types[] = {
-	&threadx_rtos,
-	&freertos_rtos,
-	&ecos_rtos,
-	&linux_rtos,
-	&chibios_rtos,
+	&ThreadX_rtos,
+	&FreeRTOS_rtos,
+	&eCos_rtos,
+	&Linux_os,
+	&ChibiOS_rtos,
 	&chromium_ec_rtos,
-	&embkernel_rtos,
+	&embKernel_rtos,
 	&mqx_rtos,
-	&ucos_iii_rtos,
+	&uCOS_III_rtos,
 	&nuttx_rtos,
-	&riot_rtos,
-	&zephyr_rtos,
-	/* keep this as last, as it always matches with rtos auto */
 	&hwthread_rtos,
 	NULL
 };
-
-static int rtos_try_next(struct target *target);
 
 int rtos_thread_packet(struct connection *connection, const char *packet, int packet_size);
 
@@ -93,7 +97,9 @@ static void os_free(struct target *target)
 	if (!target->rtos)
 		return;
 
-	free(target->rtos->symbols);
+	if (target->rtos->symbols)
+		free(target->rtos->symbols);
+
 	free(target->rtos);
 	target->rtos = NULL;
 }
@@ -102,7 +108,7 @@ static int os_alloc_create(struct target *target, struct rtos_type *ostype)
 {
 	int ret = os_alloc(target, ostype);
 
-	if (ret == JIM_OK) {
+	if (JIM_OK == ret) {
 		ret = target->rtos->type->create(target);
 		if (ret != JIM_OK)
 			os_free(target);
@@ -111,11 +117,24 @@ static int os_alloc_create(struct target *target, struct rtos_type *ostype)
 	return ret;
 }
 
-int rtos_create(struct jim_getopt_info *goi, struct target *target)
+void rtos_cleanup(struct target *target) {
+	if(target->rtos && target->rtos->type) {
+		rtos_free_threadlist(target->rtos);
+
+		if(target->rtos->type->clean)
+			target->rtos->type->clean(target);
+	}
+
+	/* Free the rtos structure only if it is not persistent */
+	if(target->rtos_auto_detect)
+		os_free(target);
+}
+
+int rtos_create(Jim_GetOptInfo *goi, struct target *target)
 {
 	int x;
 	const char *cp;
-	Jim_Obj *res;
+	struct Jim_Obj *res;
 	int e;
 
 	if (!goi->isconfigure && goi->argc != 0) {
@@ -125,77 +144,69 @@ int rtos_create(struct jim_getopt_info *goi, struct target *target)
 
 	os_free(target);
 
-	e = jim_getopt_string(goi, &cp, NULL);
+	e = Jim_GetOpt_String(goi, &cp, NULL);
 	if (e != JIM_OK)
 		return e;
 
-	if (strcmp(cp, "none") == 0)
-		return JIM_OK;
-
-	if (strcmp(cp, "auto") == 0) {
+	if (0 == strcmp(cp, "auto")) {
 		/* Auto detect tries to look up all symbols for each RTOS,
 		 * and runs the RTOS driver's _detect() function when GDB
 		 * finds all symbols for any RTOS. See rtos_qsymbol(). */
 		target->rtos_auto_detect = true;
-
-		/* rtos_qsymbol() will iterate over all RTOSes. Allocate
-		 * target->rtos here, and set it to the first RTOS type. */
-		return os_alloc(target, rtos_types[0]);
+		return JIM_OK;
 	}
 
 	for (x = 0; rtos_types[x]; x++)
-		if (strcmp(cp, rtos_types[x]->name) == 0)
+		if (0 == strcmp(cp, rtos_types[x]->name))
 			return os_alloc_create(target, rtos_types[x]);
 
 	Jim_SetResultFormatted(goi->interp, "Unknown RTOS type %s, try one of: ", cp);
 	res = Jim_GetResult(goi->interp);
 	for (x = 0; rtos_types[x]; x++)
 		Jim_AppendStrings(goi->interp, res, rtos_types[x]->name, ", ", NULL);
-	Jim_AppendStrings(goi->interp, res, ", auto or none", NULL);
+	Jim_AppendStrings(goi->interp, res, " or auto", NULL);
 
 	return JIM_ERR;
-}
-
-void rtos_destroy(struct target *target)
-{
-	os_free(target);
 }
 
 int gdb_thread_packet(struct connection *connection, char const *packet, int packet_size)
 {
 	struct target *target = get_target_from_connection(connection);
-	if (!target->rtos)
+	if (target->rtos == NULL)
 		return rtos_thread_packet(connection, packet, packet_size);	/* thread not
 										 *found*/
 	return target->rtos->gdb_thread_packet(connection, packet, packet_size);
 }
 
-static struct symbol_table_elem *find_symbol(const struct rtos *os, const char *symbol)
+static symbol_table_elem_t *next_symbol(struct rtos *os, char *cur_symbol, uint64_t cur_addr)
 {
-	struct symbol_table_elem *s;
+	symbol_table_elem_t *s;
 
-	for (s = os->symbols; s->symbol_name; s++)
-		if (!strcmp(s->symbol_name, symbol))
-			return s;
-
-	return NULL;
-}
-
-static struct symbol_table_elem *next_symbol(struct rtos *os, char *cur_symbol, uint64_t cur_addr)
-{
 	if (!os->symbols)
 		os->type->get_symbol_list_to_lookup(&os->symbols);
 
 	if (!cur_symbol[0])
 		return &os->symbols[0];
 
-	struct symbol_table_elem *s = find_symbol(os, cur_symbol);
-	if (!s)
-		return NULL;
+	for (s = os->symbols; s->symbol_name; s++)
+		if (!strcmp(s->symbol_name, cur_symbol)) {
+			s->address = cur_addr;
+			s++;
+			return s;
+		}
 
-	s->address = cur_addr;
-	s++;
-	return s;
+	return NULL;
+}
+
+/* searches for 'symbol' in the lookup table for 'os' and returns TRUE,
+ * if 'symbol' is not declared optional */
+static bool is_symbol_mandatory(const struct rtos *os, const char *symbol)
+{
+	for (symbol_table_elem_t *s = os->symbols; s->symbol_name; ++s) {
+		if (!strcmp(s->symbol_name, symbol))
+			return !s->optional;
+	}
+	return false;
 }
 
 /* rtos_qsymbol() processes and replies to all qSymbol packets from GDB.
@@ -215,12 +226,6 @@ static struct symbol_table_elem *next_symbol(struct rtos *os, char *cur_symbol, 
  * specified explicitly, then no further symbol lookup is done. When
  * auto-detecting, the RTOS driver _detect() function must return success.
  *
- * The symbol is tried twice to handle the -flto case with gcc.  The first
- * attempt uses the symbol as-is, and the second attempt tries the symbol
- * with ".lto_priv.0" appended to it.  We only consider the first static
- * symbol here from the -flto case.  (Each subsequent static symbol with
- * the same name is exported as .lto_priv.1, .lto_priv.2, etc.)
- *
  * rtos_qsymbol() returns 1 if an RTOS has been detected, or 0 otherwise.
  */
 int rtos_qsymbol(struct connection *connection, char const *packet, int packet_size)
@@ -228,12 +233,19 @@ int rtos_qsymbol(struct connection *connection, char const *packet, int packet_s
 	int rtos_detected = 0;
 	uint64_t addr = 0;
 	size_t reply_len;
-	char reply[GDB_BUFFER_SIZE + 1], cur_sym[GDB_BUFFER_SIZE / 2 + 1] = ""; /* Extra byte for null-termination */
-	struct symbol_table_elem *next_sym = NULL;
+	char reply[GDB_BUFFER_SIZE + 1], cur_sym[GDB_BUFFER_SIZE / 2 + 1] = ""; /* Extra byte for nul-termination */
+	symbol_table_elem_t *next_sym = NULL;
 	struct target *target = get_target_from_connection(connection);
 	struct rtos *os = target->rtos;
 
 	reply_len = sprintf(reply, "OK");
+
+	if (!os && target->rtos_auto_detect) {
+		/* rtos_qsymbol() will iterate over all RTOSes. Allocate
+		 * target->rtos here, and set it to the first RTOS type. */
+		os_alloc(target, rtos_types[0]);
+		os = target->rtos;
+	}
 
 	if (!os)
 		goto done;
@@ -242,62 +254,30 @@ int rtos_qsymbol(struct connection *connection, char const *packet, int packet_s
 	size_t len = unhexify((uint8_t *)cur_sym, strchr(packet + 8, ':') + 1, strlen(strchr(packet + 8, ':') + 1));
 	cur_sym[len] = 0;
 
-	const char no_suffix[] = "";
-	const char lto_suffix[] = ".lto_priv.0";
-	const size_t lto_suffix_len = strlen(lto_suffix);
-
-	const char *cur_suffix;
-	const char *next_suffix;
-
-	/* Detect what suffix was used during the previous symbol lookup attempt, and
-	 * speculatively determine the next suffix (only used for the unknown address case) */
-	if (len > lto_suffix_len && !strcmp(cur_sym + len - lto_suffix_len, lto_suffix)) {
-		/* Trim the suffix from cur_sym for comparison purposes below */
-		cur_sym[len - lto_suffix_len] = '\0';
-		cur_suffix = lto_suffix;
-		next_suffix = NULL;
-	} else {
-		cur_suffix = no_suffix;
-		next_suffix = lto_suffix;
-	}
-
 	if ((strcmp(packet, "qSymbol::") != 0) &&               /* GDB is not offering symbol lookup for the first time */
-	    (!sscanf(packet, "qSymbol:%" SCNx64 ":", &addr))) { /* GDB did not find an address for a symbol */
+		(!sscanf(packet, "qSymbol:%" SCNx64 ":", &addr)) && /* GDB did not find an address for a symbol */
+		is_symbol_mandatory(os, cur_sym)) {					/* the symbol is mandatory for this RTOS */
 
 		/* GDB could not find an address for the previous symbol */
-		struct symbol_table_elem *sym = find_symbol(os, cur_sym);
-
-		if (next_suffix) {
-			next_sym = sym;
-		} else if (sym && !sym->optional) {	/* the symbol is mandatory for this RTOS */
-			if (!target->rtos_auto_detect) {
-				LOG_WARNING("RTOS %s not detected. (GDB could not find symbol \'%s\')", os->type->name, cur_sym);
+		if (!target->rtos_auto_detect) {
+			LOG_WARNING("RTOS %s not detected. (GDB could not find symbol \'%s\')", os->type->name, cur_sym);
+			goto done;
+		} else {
+			/* Autodetecting RTOS - try next RTOS */
+			if (!rtos_try_next(target)) {
+				LOG_WARNING("No RTOS could be auto-detected!");
+				/* Cleanup stale information in target->rtos
+				 * This prevents oocd from thinking that target is running
+				 * the last rtos in the rtos_types[] array */
+				os_free(target);
 				goto done;
-			} else {
-				/* Autodetecting RTOS - try next RTOS */
-				if (!rtos_try_next(target)) {
-					LOG_WARNING("No RTOS could be auto-detected!");
-					goto done;
-				}
-
-				/* Next RTOS selected - invalidate current symbol */
-				cur_sym[0] = '\x00';
 			}
+
+			/* Next RTOS selected - invalidate current symbol */
+			cur_sym[0] = '\x00';
 		}
 	}
-
-	LOG_DEBUG("RTOS: Address of symbol '%s%s' is 0x%" PRIx64, cur_sym, cur_suffix, addr);
-
-	if (!next_sym) {
-		next_sym = next_symbol(os, cur_sym, addr);
-		next_suffix = no_suffix;
-	}
-
-	/* Should never happen unless the debugger misbehaves */
-	if (!next_sym) {
-		LOG_WARNING("RTOS: Debugger sent us qSymbol with '%s%s' that we did not ask for", cur_sym, cur_suffix);
-		goto done;
-	}
+	next_sym = next_symbol(os, cur_sym, addr);
 
 	if (!next_sym->symbol_name) {
 		/* No more symbols need looking up */
@@ -313,29 +293,22 @@ int rtos_qsymbol(struct connection *connection, char const *packet, int packet_s
 			goto done;
 		} else {
 			LOG_WARNING("No RTOS could be auto-detected!");
+			/* Cleanup stale information in target->rtos
+			 * This prevents oocd from thinking that target is running
+			 * the last rtos in the rtos_types[] array */
+			os_free(target);
 			goto done;
 		}
 	}
 
-	assert(next_suffix);
-
-	reply_len = 8;                                   /* snprintf(..., "qSymbol:") */
-	reply_len += 2 * strlen(next_sym->symbol_name);  /* hexify(..., next_sym->symbol_name, ...) */
-	reply_len += 2 * strlen(next_suffix);            /* hexify(..., next_suffix, ...) */
-	reply_len += 1;                                  /* Terminating NUL */
-	if (reply_len > sizeof(reply)) {
-		LOG_ERROR("ERROR: RTOS symbol '%s%s' name is too long for GDB!", next_sym->symbol_name, next_suffix);
+	if (8 + (strlen(next_sym->symbol_name) * 2) + 1 > sizeof(reply)) {
+		LOG_ERROR("ERROR: RTOS symbol '%s' name is too long for GDB!", next_sym->symbol_name);
 		goto done;
 	}
-
-	LOG_DEBUG("RTOS: Requesting symbol lookup of '%s%s' from the debugger", next_sym->symbol_name, next_suffix);
 
 	reply_len = snprintf(reply, sizeof(reply), "qSymbol:");
 	reply_len += hexify(reply + reply_len,
 		(const uint8_t *)next_sym->symbol_name, strlen(next_sym->symbol_name),
-		sizeof(reply) - reply_len);
-	reply_len += hexify(reply + reply_len,
-		(const uint8_t *)next_suffix, strlen(next_suffix),
 		sizeof(reply) - reply_len);
 
 done:
@@ -348,13 +321,13 @@ int rtos_thread_packet(struct connection *connection, char const *packet, int pa
 	struct target *target = get_target_from_connection(connection);
 
 	if (strncmp(packet, "qThreadExtraInfo,", 17) == 0) {
-		if ((target->rtos) && (target->rtos->thread_details) &&
+		if ((target->rtos != NULL) && (target->rtos->thread_details != NULL) &&
 				(target->rtos->thread_count != 0)) {
 			threadid_t threadid = 0;
 			int found = -1;
 			sscanf(packet, "qThreadExtraInfo,%" SCNx64, &threadid);
 
-			if ((target->rtos) && (target->rtos->thread_details)) {
+			if ((target->rtos != NULL) && (target->rtos->thread_details != NULL)) {
 				int thread_num;
 				for (thread_num = 0; thread_num < target->rtos->thread_count; thread_num++) {
 					if (target->rtos->thread_details[thread_num].threadid == threadid) {
@@ -371,17 +344,17 @@ int rtos_thread_packet(struct connection *connection, char const *packet, int pa
 			struct thread_detail *detail = &target->rtos->thread_details[found];
 
 			int str_size = 0;
-			if (detail->thread_name_str)
+			if (detail->thread_name_str != NULL)
 				str_size += strlen(detail->thread_name_str);
-			if (detail->extra_info_str)
+			if (detail->extra_info_str != NULL)
 				str_size += strlen(detail->extra_info_str);
 
 			char *tmp_str = calloc(str_size + 9, sizeof(char));
 			char *tmp_str_ptr = tmp_str;
 
-			if (detail->thread_name_str)
+			if (detail->thread_name_str != NULL)
 				tmp_str_ptr += sprintf(tmp_str_ptr, "Name: %s", detail->thread_name_str);
-			if (detail->extra_info_str) {
+			if (detail->extra_info_str != NULL) {
 				if (tmp_str_ptr != tmp_str)
 					tmp_str_ptr += sprintf(tmp_str_ptr, ", ");
 				tmp_str_ptr += sprintf(tmp_str_ptr, "%s", detail->extra_info_str);
@@ -405,15 +378,19 @@ int rtos_thread_packet(struct connection *connection, char const *packet, int pa
 	} else if (strncmp(packet, "qSymbol", 7) == 0) {
 		if (rtos_qsymbol(connection, packet, packet_size) == 1) {
 			if (target->rtos_auto_detect == true) {
-				target->rtos_auto_detect = false;
+				/* Do not reset rtos_auto_detect, this breaks persistent mode
+				 * when oocd is running in daemon mode */
+				//target->rtos_auto_detect = false;
 				target->rtos->type->create(target);
 			}
+			/* Needed first time rtos is detected esp. when gdb is being
+			 * used for an attach with no immediate continue */
 			target->rtos->type->update_threads(target->rtos);
 		}
 		return ERROR_OK;
 	} else if (strncmp(packet, "qfThreadInfo", 12) == 0) {
 		int i;
-		if (target->rtos) {
+		if (target->rtos != NULL) {
 			if (target->rtos->thread_count == 0) {
 				gdb_put_packet(connection, "l", 1);
 			} else {
@@ -446,19 +423,23 @@ int rtos_thread_packet(struct connection *connection, char const *packet, int pa
 		 * otherwise it gets incorrectly handled */
 		return GDB_THREAD_PACKET_NOT_CONSUMED;
 	} else if (strncmp(packet, "qC", 2) == 0) {
-		if (target->rtos) {
+		/* Report thread id only if threads are actually running */
+		if (target->rtos != NULL && target->rtos->thread_count != 0) {
 			char buffer[19];
 			int size;
 			size = snprintf(buffer, 19, "QC%016" PRIx64, target->rtos->current_thread);
 			gdb_put_packet(connection, buffer, size);
-		} else
-			gdb_put_packet(connection, "QC0", 3);
+		} else {
+			/* If RTOS is not detected/configured we are always reporting single
+			 * thread with ID #1, report thread #1 here to not confuse GDB */
+			gdb_put_packet(connection, "QC1", 3);
+		}
 		return ERROR_OK;
 	} else if (packet[0] == 'T') {	/* Is thread alive? */
 		threadid_t threadid;
 		int found = -1;
 		sscanf(packet, "T%" SCNx64, &threadid);
-		if ((target->rtos) && (target->rtos->thread_details)) {
+		if ((target->rtos != NULL) && (target->rtos->thread_details != NULL)) {
 			int thread_num;
 			for (thread_num = 0; thread_num < target->rtos->thread_count; thread_num++) {
 				if (target->rtos->thread_details[thread_num].threadid == threadid) {
@@ -466,6 +447,9 @@ int rtos_thread_packet(struct connection *connection, char const *packet, int pa
 						found = thread_num;
 				}
 			}
+		} else {
+			/* No RTOS: Current Execution thread #1 is always alive */
+			found = 1;
 		}
 		if (found != -1)
 			gdb_put_packet(connection, "OK", 2);	/* thread alive */
@@ -474,7 +458,7 @@ int rtos_thread_packet(struct connection *connection, char const *packet, int pa
 		return ERROR_OK;
 	} else if (packet[0] == 'H') {	/* Set current thread ( 'c' for step and continue, 'g' for
 					 * all other operations ) */
-		if ((packet[1] == 'g') && (target->rtos)) {
+		if ((packet[1] == 'g') && (target->rtos != NULL)) {
 			threadid_t threadid;
 			sscanf(packet, "Hg%16" SCNx64, &threadid);
 			LOG_DEBUG("RTOS: GDB requested to set current thread to 0x%" PRIx64, threadid);
@@ -514,43 +498,30 @@ static int rtos_put_gdb_reg_list(struct connection *connection,
 	return ERROR_OK;
 }
 
-/** Look through all registers to find this register. */
 int rtos_get_gdb_reg(struct connection *connection, int reg_num)
 {
 	struct target *target = get_target_from_connection(connection);
 	int64_t current_threadid = target->rtos->current_threadid;
-	if ((target->rtos) && (current_threadid != -1) &&
+	if ((target->rtos != NULL) && (current_threadid != -1) &&
 			(current_threadid != 0) &&
 			((current_threadid != target->rtos->current_thread) ||
 			(target->smp))) {	/* in smp several current thread are possible */
 		struct rtos_reg *reg_list;
 		int num_regs;
 
-		LOG_DEBUG("getting register %d for thread 0x%" PRIx64
-				  ", target->rtos->current_thread=0x%" PRIx64,
+		LOG_DEBUG("RTOS: getting register %d for thread 0x%" PRIx64
+				  ", target->rtos->current_thread=0x%" PRIx64 "\r\n",
 										reg_num,
 										current_threadid,
 										target->rtos->current_thread);
 
-		int retval;
-		if (target->rtos->type->get_thread_reg) {
-			reg_list = calloc(1, sizeof(*reg_list));
-			num_regs = 1;
-			retval = target->rtos->type->get_thread_reg(target->rtos,
-					current_threadid, reg_num, &reg_list[0]);
-			if (retval != ERROR_OK) {
-				LOG_ERROR("RTOS: failed to get register %d", reg_num);
-				return retval;
-			}
-		} else {
-			retval = target->rtos->type->get_thread_reg_list(target->rtos,
-					current_threadid,
-					&reg_list,
-					&num_regs);
-			if (retval != ERROR_OK) {
-				LOG_ERROR("RTOS: failed to get register list");
-				return retval;
-			}
+		int retval = target->rtos->type->get_thread_reg_list(target->rtos,
+				current_threadid,
+				&reg_list,
+				&num_regs);
+		if (retval != ERROR_OK) {
+			LOG_ERROR("RTOS: failed to get register list");
+			return retval;
 		}
 
 		for (int i = 0; i < num_regs; ++i) {
@@ -566,12 +537,11 @@ int rtos_get_gdb_reg(struct connection *connection, int reg_num)
 	return ERROR_FAIL;
 }
 
-/** Return a list of general registers. */
 int rtos_get_gdb_reg_list(struct connection *connection)
 {
 	struct target *target = get_target_from_connection(connection);
 	int64_t current_threadid = target->rtos->current_threadid;
-	if ((target->rtos) && (current_threadid != -1) &&
+	if ((target->rtos != NULL) && (current_threadid != -1) &&
 			(current_threadid != 0) &&
 			((current_threadid != target->rtos->current_thread) ||
 			(target->smp))) {	/* in smp several current thread are possible */
@@ -596,20 +566,6 @@ int rtos_get_gdb_reg_list(struct connection *connection)
 		free(reg_list);
 
 		return ERROR_OK;
-	}
-	return ERROR_FAIL;
-}
-
-int rtos_set_reg(struct connection *connection, int reg_num,
-		uint8_t *reg_value)
-{
-	struct target *target = get_target_from_connection(connection);
-	int64_t current_threadid = target->rtos->current_threadid;
-	if ((target->rtos) &&
-			(target->rtos->type->set_reg) &&
-			(current_threadid != -1) &&
-			(current_threadid != 0)) {
-		return target->rtos->type->set_reg(target->rtos, reg_num, reg_value);
 	}
 	return ERROR_FAIL;
 }
@@ -647,8 +603,8 @@ int rtos_generic_stack_read(struct target *target,
 		LOG_OUTPUT("\r\n");
 #endif
 
-	target_addr_t new_stack_ptr;
-	if (stacking->calculate_process_stack) {
+	int64_t new_stack_ptr;
+	if (stacking->calculate_process_stack != NULL) {
 		new_stack_ptr = stacking->calculate_process_stack(target,
 				stack_data, stacking, stack_ptr);
 	} else {
@@ -675,7 +631,7 @@ int rtos_generic_stack_read(struct target *target,
 	return ERROR_OK;
 }
 
-static int rtos_try_next(struct target *target)
+int rtos_try_next(struct target *target)
 {
 	struct rtos *os = target->rtos;
 	struct rtos_type **type = rtos_types;
@@ -690,16 +646,17 @@ static int rtos_try_next(struct target *target)
 		return 0;
 
 	os->type = *type;
-
-	free(os->symbols);
-	os->symbols = NULL;
+	if (os->symbols) {
+		free(os->symbols);
+		os->symbols = NULL;
+	}
 
 	return 1;
 }
 
 int rtos_update_threads(struct target *target)
 {
-	if ((target->rtos) && (target->rtos->type))
+	if ((target->rtos != NULL) && (target->rtos->type != NULL))
 		target->rtos->type->update_threads(target->rtos);
 	return ERROR_OK;
 }
@@ -722,18 +679,52 @@ void rtos_free_threadlist(struct rtos *rtos)
 	}
 }
 
-int rtos_read_buffer(struct target *target, target_addr_t address,
-		uint32_t size, uint8_t *buffer)
+int rtos_wipe(struct target *target)
 {
-	if (target->rtos->type->read_buffer)
-		return target->rtos->type->read_buffer(target->rtos, address, size, buffer);
-	return ERROR_NOT_IMPLEMENTED;
+	int hr = ERROR_OK;
+
+	if(target && target->rtos && target->rtos->type && target->rtos->type->wipe)
+	{
+		hr = target->rtos->type->wipe(target);
+		if (hr == ERROR_OK)
+			hr = rtos_update_threads(target);
+	}
+
+	return hr;
 }
 
-int rtos_write_buffer(struct target *target, target_addr_t address,
-		uint32_t size, const uint8_t *buffer)
+COMMAND_HANDLER(rtos_handle_wipe)
 {
-	if (target->rtos->type->write_buffer)
-		return target->rtos->type->write_buffer(target->rtos, address, size, buffer);
-	return ERROR_NOT_IMPLEMENTED;
+	struct target *target = (CMD_ARGC == 0) ?
+				get_current_target_or_null(CMD_CTX) :
+				get_target(CMD_ARGV[0]);
+
+	return rtos_wipe(target);
+}
+
+static const struct command_registration rtos_subcommand_handlers[] = {
+	{
+		.name = "wipe",
+		.mode = COMMAND_EXEC,
+		.handler = rtos_handle_wipe,
+		.usage = "",
+		.help = "Wipes RTOS structures, intended to be used after Reset",
+	},
+	COMMAND_REGISTRATION_DONE
+};
+
+static const struct command_registration rtos_commands[] = {
+	{
+		.name = "rtos",
+		.mode = COMMAND_EXEC,
+		.help = "RTOS commands",
+		.chain = rtos_subcommand_handlers,
+		.usage = "",
+	},
+	COMMAND_REGISTRATION_DONE
+};
+
+int rtos_register_commands(struct command_context *cmd_ctx)
+{
+	return register_commands(cmd_ctx, NULL, rtos_commands);
 }

@@ -1,8 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2012 by George Harris                                   *
  *   george@luminairecoffee.com                                            *
+ *																		   *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -36,7 +47,7 @@
 #define SPIFI_INIT_STACK_SIZE  512
 
 struct lpcspifi_flash_bank {
-	bool probed;
+	int probed;
 	uint32_t ssp_base;
 	uint32_t io_base;
 	uint32_t ioconfig_base;
@@ -55,13 +66,13 @@ FLASH_BANK_COMMAND_HANDLER(lpcspifi_flash_bank_command)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
 	lpcspifi_info = malloc(sizeof(struct lpcspifi_flash_bank));
-	if (!lpcspifi_info) {
+	if (lpcspifi_info == NULL) {
 		LOG_ERROR("not enough memory");
 		return ERROR_FAIL;
 	}
 
 	bank->driver_priv = lpcspifi_info;
-	lpcspifi_info->probed = false;
+	lpcspifi_info->probed = 0;
 
 	return ERROR_OK;
 }
@@ -166,8 +177,8 @@ static int lpcspifi_set_hw_mode(struct flash_bank *bank)
 	retval = target_alloc_working_area(target, sizeof(spifi_init_code)
 		+ SPIFI_INIT_STACK_SIZE, &spifi_init_algorithm);
 	if (retval != ERROR_OK) {
-		LOG_ERROR("Insufficient working area to initialize SPIFI "
-			"module. You must allocate at least %zdB of working "
+		LOG_ERROR("Insufficient working area to initialize SPIFI "\
+			"module. You must allocate at least %zdB of working "\
 			"area in order to use this driver.",
 			sizeof(spifi_init_code) + SPIFI_INIT_STACK_SIZE
 		);
@@ -205,7 +216,7 @@ static int lpcspifi_set_hw_mode(struct flash_bank *bank)
 
 	/* Run the algorithm */
 	LOG_DEBUG("Running SPIFI init algorithm");
-	retval = target_run_algorithm(target, 0, NULL, 2, reg_params,
+	retval = target_run_algorithm(target, 0 , NULL, 2, reg_params,
 		spifi_init_algorithm->address,
 		spifi_init_algorithm->address + sizeof(spifi_init_code) - 2,
 		1000, &armv7m_info);
@@ -403,8 +414,7 @@ static int lpcspifi_bulk_erase(struct flash_bank *bank)
 	return retval;
 }
 
-static int lpcspifi_erase(struct flash_bank *bank, unsigned int first,
-		unsigned int last)
+static int lpcspifi_erase(struct flash_bank *bank, int first, int last)
 {
 	struct target *target = bank->target;
 	struct lpcspifi_flash_bank *lpcspifi_info = bank->driver_priv;
@@ -412,15 +422,16 @@ static int lpcspifi_erase(struct flash_bank *bank, unsigned int first,
 	struct armv7m_algorithm armv7m_info;
 	struct working_area *erase_algorithm;
 	int retval = ERROR_OK;
+	int sector;
 
-	LOG_DEBUG("erase from sector %u to sector %u", first, last);
+	LOG_DEBUG("erase from sector %d to sector %d", first, last);
 
 	if (target->state != TARGET_HALTED) {
 		LOG_ERROR("Target not halted");
 		return ERROR_TARGET_NOT_HALTED;
 	}
 
-	if ((last < first) || (last >= bank->num_sectors)) {
+	if ((first < 0) || (last < first) || (last >= bank->num_sectors)) {
 		LOG_ERROR("Flash sector invalid");
 		return ERROR_FLASH_SECTOR_INVALID;
 	}
@@ -430,9 +441,9 @@ static int lpcspifi_erase(struct flash_bank *bank, unsigned int first,
 		return ERROR_FLASH_BANK_NOT_PROBED;
 	}
 
-	for (unsigned int sector = first; sector <= last; sector++) {
+	for (sector = first; sector <= last; sector++) {
 		if (bank->sectors[sector].is_protected) {
-			LOG_ERROR("Flash sector %u protected", sector);
+			LOG_ERROR("Flash sector %d protected", sector);
 			return ERROR_FAIL;
 		}
 	}
@@ -441,7 +452,7 @@ static int lpcspifi_erase(struct flash_bank *bank, unsigned int first,
 	 * it, use a bulk erase instead of going sector-by-sector. */
 	if (first == 0 && last == (bank->num_sectors - 1)
 		&& lpcspifi_info->dev->chip_erase_cmd != lpcspifi_info->dev->erase_cmd) {
-		LOG_DEBUG("Chip supports the bulk erase command."
+		LOG_DEBUG("Chip supports the bulk erase command."\
 		" Will use bulk erase instead of sector-by-sector erase.");
 		retval = lpcspifi_bulk_erase(bank);
 
@@ -514,7 +525,7 @@ static int lpcspifi_erase(struct flash_bank *bank, unsigned int first,
 	retval = target_alloc_working_area(target, sizeof(lpcspifi_flash_erase_code),
 		&erase_algorithm);
 	if (retval != ERROR_OK) {
-		LOG_ERROR("Insufficient working area. You must configure a working"
+		LOG_ERROR("Insufficient working area. You must configure a working"\
 			" area of at least %zdB in order to erase SPIFI flash.",
 			sizeof(lpcspifi_flash_erase_code));
 		return retval;
@@ -539,7 +550,7 @@ static int lpcspifi_erase(struct flash_bank *bank, unsigned int first,
 	buf_set_u32(reg_params[3].value, 0, 32, bank->sectors[first].size);
 
 	/* Run the algorithm */
-	retval = target_run_algorithm(target, 0, NULL, 4, reg_params,
+	retval = target_run_algorithm(target, 0 , NULL, 4, reg_params,
 		erase_algorithm->address,
 		erase_algorithm->address + sizeof(lpcspifi_flash_erase_code) - 4,
 		3000*(last - first + 1), &armv7m_info);
@@ -560,9 +571,11 @@ static int lpcspifi_erase(struct flash_bank *bank, unsigned int first,
 }
 
 static int lpcspifi_protect(struct flash_bank *bank, int set,
-	unsigned int first, unsigned int last)
+	int first, int last)
 {
-	for (unsigned int sector = first; sector <= last; sector++)
+	int sector;
+
+	for (sector = first; sector <= last; sector++)
 		bank->sectors[sector].is_protected = set;
 	return ERROR_OK;
 }
@@ -577,6 +590,7 @@ static int lpcspifi_write(struct flash_bank *bank, const uint8_t *buffer,
 	struct reg_param reg_params[5];
 	struct armv7m_algorithm armv7m_info;
 	struct working_area *write_algorithm;
+	int sector;
 	int retval = ERROR_OK;
 
 	LOG_DEBUG("offset=0x%08" PRIx32 " count=0x%08" PRIx32,
@@ -593,14 +607,14 @@ static int lpcspifi_write(struct flash_bank *bank, const uint8_t *buffer,
 	}
 
 	/* Check sector protection */
-	for (unsigned int sector = 0; sector < bank->num_sectors; sector++) {
+	for (sector = 0; sector < bank->num_sectors; sector++) {
 		/* Start offset in or before this sector? */
 		/* End offset in or behind this sector? */
 		if ((offset <
 				(bank->sectors[sector].offset + bank->sectors[sector].size))
 			&& ((offset + count - 1) >= bank->sectors[sector].offset)
 			&& bank->sectors[sector].is_protected) {
-			LOG_ERROR("Flash sector %u protected", sector);
+			LOG_ERROR("Flash sector %d protected", sector);
 			return ERROR_FAIL;
 		}
 	}
@@ -671,7 +685,7 @@ static int lpcspifi_write(struct flash_bank *bank, const uint8_t *buffer,
 
 	if (target_alloc_working_area(target, sizeof(lpcspifi_flash_write_code),
 			&write_algorithm) != ERROR_OK) {
-		LOG_ERROR("Insufficient working area. You must configure"
+		LOG_ERROR("Insufficient working area. You must configure"\
 			" a working area > %zdB in order to write to SPIFI flash.",
 			sizeof(lpcspifi_flash_write_code));
 		return ERROR_TARGET_RESOURCE_NOT_AVAILABLE;
@@ -693,15 +707,15 @@ static int lpcspifi_write(struct flash_bank *bank, const uint8_t *buffer,
 		 * space, free the algorithm */
 		target_free_working_area(target, write_algorithm);
 
-		LOG_ERROR("Insufficient working area. Please allocate at least"
+		LOG_ERROR("Insufficient working area. Please allocate at least"\
 			" %zdB of working area to enable flash writes.",
 			sizeof(lpcspifi_flash_write_code) + 1
 		);
 
 		return ERROR_TARGET_RESOURCE_NOT_AVAILABLE;
 	} else if (fifo_size < page_size)
-		LOG_WARNING("Working area size is limited; flash writes may be"
-			" slow. Increase working area size to at least %zdB"
+		LOG_WARNING("Working area size is limited; flash writes may be"\
+			" slow. Increase working area size to at least %zdB"\
 			" to reduce write times.",
 			(size_t)(sizeof(lpcspifi_flash_write_code) + page_size)
 		);
@@ -838,7 +852,7 @@ static int lpcspifi_probe(struct flash_bank *bank)
 	/* If we've already probed, we should be fine to skip this time. */
 	if (lpcspifi_info->probed)
 		return ERROR_OK;
-	lpcspifi_info->probed = false;
+	lpcspifi_info->probed = 0;
 
 	lpcspifi_info->ssp_base = 0x40083000;
 	lpcspifi_info->io_base = 0x400F4000;
@@ -883,12 +897,12 @@ static int lpcspifi_probe(struct flash_bank *bank)
 	/* create and fill sectors array */
 	bank->num_sectors = lpcspifi_info->dev->size_in_bytes / sectorsize;
 	sectors = malloc(sizeof(struct flash_sector) * bank->num_sectors);
-	if (!sectors) {
+	if (sectors == NULL) {
 		LOG_ERROR("not enough memory");
 		return ERROR_FAIL;
 	}
 
-	for (unsigned int sector = 0; sector < bank->num_sectors; sector++) {
+	for (int sector = 0; sector < bank->num_sectors; sector++) {
 		sectors[sector].offset = sector * sectorsize;
 		sectors[sector].size = sectorsize;
 		sectors[sector].is_erased = -1;
@@ -897,7 +911,7 @@ static int lpcspifi_probe(struct flash_bank *bank)
 
 	bank->sectors = sectors;
 
-	lpcspifi_info->probed = true;
+	lpcspifi_info->probed = 1;
 	return ERROR_OK;
 }
 
@@ -915,16 +929,17 @@ static int lpcspifi_protect_check(struct flash_bank *bank)
 	return ERROR_OK;
 }
 
-static int get_lpcspifi_info(struct flash_bank *bank, struct command_invocation *cmd)
+static int get_lpcspifi_info(struct flash_bank *bank, char *buf, int buf_size)
 {
 	struct lpcspifi_flash_bank *lpcspifi_info = bank->driver_priv;
 
 	if (!(lpcspifi_info->probed)) {
-		command_print_sameline(cmd, "\nSPIFI flash bank not probed yet\n");
+		snprintf(buf, buf_size,
+			"\nSPIFI flash bank not probed yet\n");
 		return ERROR_OK;
 	}
 
-	command_print_sameline(cmd, "\nSPIFI flash information:\n"
+	snprintf(buf, buf_size, "\nSPIFI flash information:\n"
 		"  Device \'%s\' (ID 0x%08" PRIx32 ")\n",
 		lpcspifi_info->dev->name, lpcspifi_info->dev->device_id);
 

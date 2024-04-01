@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2005 by Dominic Rath                                    *
  *   Dominic.Rath@gmx.de                                                   *
@@ -13,6 +11,19 @@
  *                                                                         *
  *   Copyright (C) 2009 Zachary T Welch                                    *
  *   zw@superlucidity.net                                                  *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -71,7 +82,7 @@ int interface_jtag_add_ir_scan(struct jtag_tap *active,
 
 	/* loop over all enabled TAPs */
 
-	for (struct jtag_tap *tap = jtag_tap_next_enabled(NULL); tap; tap = jtag_tap_next_enabled(tap)) {
+	for (struct jtag_tap *tap = jtag_tap_next_enabled(NULL); tap != NULL; tap = jtag_tap_next_enabled(tap)) {
 		/* search the input field list for fields for the current TAP */
 
 		if (tap == active) {
@@ -111,7 +122,7 @@ int interface_jtag_add_dr_scan(struct jtag_tap *active, int in_num_fields,
 
 	size_t bypass_devices = 0;
 
-	for (struct jtag_tap *tap = jtag_tap_next_enabled(NULL); tap; tap = jtag_tap_next_enabled(tap)) {
+	for (struct jtag_tap *tap = jtag_tap_next_enabled(NULL); tap != NULL; tap = jtag_tap_next_enabled(tap)) {
 		if (tap->bypass)
 			bypass_devices++;
 	}
@@ -134,7 +145,7 @@ int interface_jtag_add_dr_scan(struct jtag_tap *active, int in_num_fields,
 
 	/* loop over all enabled TAPs */
 
-	for (struct jtag_tap *tap = jtag_tap_next_enabled(NULL); tap; tap = jtag_tap_next_enabled(tap)) {
+	for (struct jtag_tap *tap = jtag_tap_next_enabled(NULL); tap != NULL; tap = jtag_tap_next_enabled(tap)) {
 		/* if TAP is not bypassed insert matching input fields */
 
 		if (!tap->bypass) {
@@ -224,7 +235,7 @@ int interface_add_tms_seq(unsigned num_bits, const uint8_t *seq, enum tap_state 
 	struct jtag_command *cmd;
 
 	cmd = cmd_queue_alloc(sizeof(struct jtag_command));
-	if (!cmd)
+	if (cmd == NULL)
 		return ERROR_FAIL;
 
 	cmd->type = JTAG_TMS;
@@ -339,7 +350,7 @@ void interface_jtag_add_callback4(jtag_callback_t callback,
 	entry->data2 = data2;
 	entry->data3 = data3;
 
-	if (!jtag_callback_queue_head) {
+	if (jtag_callback_queue_head == NULL) {
 		jtag_callback_queue_head = entry;
 		jtag_callback_queue_tail = entry;
 	} else {
@@ -358,7 +369,7 @@ int interface_jtag_execute_queue(void)
 	int retval = default_interface_jtag_execute_queue();
 	if (retval == ERROR_OK) {
 		struct jtag_callback_entry *entry;
-		for (entry = jtag_callback_queue_head; entry; entry = entry->next) {
+		for (entry = jtag_callback_queue_head; entry != NULL; entry = entry->next) {
 			retval = entry->callback(entry->data0, entry->data1, entry->data2, entry->data3);
 			if (retval != ERROR_OK)
 				break;

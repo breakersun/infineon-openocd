@@ -1,7 +1,18 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2010 by Oleksandr Tymoshenko <gonzo@bluezbox.com>       *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -18,13 +29,13 @@ static int avr32_jtag_set_instr(struct avr32_jtag *jtag_info, int new_instr)
 	int busy = 0;
 
 	tap = jtag_info->tap;
-	if (!tap)
+	if (tap == NULL)
 		return ERROR_FAIL;
 
 	if (buf_get_u32(tap->cur_instr, 0, tap->ir_length) != (uint32_t)new_instr) {
 		do {
 			struct scan_field field;
-			uint8_t t[4] = { 0 };
+			uint8_t t[4];
 			uint8_t ret[4];
 
 			field.num_bits = tap->ir_length;
@@ -44,7 +55,7 @@ static int avr32_jtag_set_instr(struct avr32_jtag *jtag_info, int new_instr)
 	return ERROR_OK;
 }
 
-static int avr32_jtag_nexus_set_address(struct avr32_jtag *jtag_info,
+int avr32_jtag_nexus_set_address(struct avr32_jtag *jtag_info,
 		uint32_t addr, int mode)
 {
 	struct scan_field fields[2];
@@ -81,7 +92,7 @@ static int avr32_jtag_nexus_set_address(struct avr32_jtag *jtag_info,
 }
 
 
-static int avr32_jtag_nexus_read_data(struct avr32_jtag *jtag_info,
+int avr32_jtag_nexus_read_data(struct avr32_jtag *jtag_info,
 	uint32_t *pdata)
 {
 
@@ -118,7 +129,7 @@ static int avr32_jtag_nexus_read_data(struct avr32_jtag *jtag_info,
 	return ERROR_OK;
 }
 
-static int avr32_jtag_nexus_write_data(struct avr32_jtag *jtag_info,
+int avr32_jtag_nexus_write_data(struct avr32_jtag *jtag_info,
 		uint32_t data)
 {
 
@@ -162,18 +173,22 @@ int avr32_jtag_nexus_read(struct avr32_jtag *jtag_info,
 {
 	avr32_jtag_set_instr(jtag_info, AVR32_INST_NEXUS_ACCESS);
 	avr32_jtag_nexus_set_address(jtag_info, addr, MODE_READ);
-	return avr32_jtag_nexus_read_data(jtag_info, value);
-}
+	avr32_jtag_nexus_read_data(jtag_info, value);
 
+	return ERROR_OK;
+
+}
 int avr32_jtag_nexus_write(struct avr32_jtag *jtag_info,
 		uint32_t addr, uint32_t value)
 {
 	avr32_jtag_set_instr(jtag_info, AVR32_INST_NEXUS_ACCESS);
 	avr32_jtag_nexus_set_address(jtag_info, addr, MODE_WRITE);
-	return avr32_jtag_nexus_write_data(jtag_info, value);
+	avr32_jtag_nexus_write_data(jtag_info, value);
+
+	return ERROR_OK;
 }
 
-static int avr32_jtag_mwa_set_address(struct avr32_jtag *jtag_info, int slave,
+int avr32_jtag_mwa_set_address(struct avr32_jtag *jtag_info, int slave,
 		uint32_t addr, int mode)
 {
 	struct scan_field fields[2];
@@ -212,7 +227,7 @@ static int avr32_jtag_mwa_set_address(struct avr32_jtag *jtag_info, int slave,
 	return ERROR_OK;
 }
 
-static int avr32_jtag_mwa_read_data(struct avr32_jtag *jtag_info,
+int avr32_jtag_mwa_read_data(struct avr32_jtag *jtag_info,
 	uint32_t *pdata)
 {
 
@@ -249,7 +264,7 @@ static int avr32_jtag_mwa_read_data(struct avr32_jtag *jtag_info,
 	return ERROR_OK;
 }
 
-static int avr32_jtag_mwa_write_data(struct avr32_jtag *jtag_info,
+int avr32_jtag_mwa_write_data(struct avr32_jtag *jtag_info,
 	uint32_t data)
 {
 
@@ -358,3 +373,4 @@ int avr32_ocd_clearbits(struct avr32_jtag *jtag, int reg, uint32_t bits)
 
 	return ERROR_OK;
 }
+

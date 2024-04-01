@@ -1,5 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-or-later
-
 noinst_LTLIBRARIES += %D%/libocdhla.la
 
 %C%_libocdhla_la_SOURCES = \

@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2017 by Tomas Vanek					   *
  *   vanekt@fbl.cz							   *
@@ -7,6 +5,19 @@
  *   Based on at91samd.c                                                   *
  *   Copyright (C) 2013 by Andrey Yurovsky                                 *
  *   Andrey Yurovsky <yurovsky@gmail.com>                                  *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -16,15 +27,13 @@
 #include "imp.h"
 #include "helper/binarybuffer.h"
 
-#include <helper/time_support.h>
-#include <jtag/jtag.h>
 #include <target/cortex_m.h>
 
 /* A note to prefixing.
- * Definitions and functions inherited from at91samd.c without
- * any change retained the original prefix samd_ so they eventually
+ * Definitions and functions ingerited from at91samd.c without
+ * any change retained the original prefix samd_ so they eventualy
  * may go to samd_common.h and .c
- * As currently there are only 3 short functions identical with
+ * As currently there are olny 3 short functions identical with
  * the original source, no common file was created. */
 
 #define SAME5_PAGES_PER_BLOCK	16
@@ -103,7 +112,7 @@ struct samd_part {
 };
 
 /* See SAM D5x/E5x Family Silicon Errata and Data Sheet Clarification
- * DS80000748K */
+ * DS80000748B */
 /* Known SAMD51 parts. */
 static const struct samd_part samd51_parts[] = {
 	{ 0x00, "SAMD51P20A", 1024, 256 },
@@ -124,8 +133,6 @@ static const struct samd_part same51_parts[] = {
 	{ 0x02, "SAME51J19A", 512, 192 },
 	{ 0x03, "SAME51J18A", 256, 128 },
 	{ 0x04, "SAME51J20A", 1024, 256 },
-	{ 0x05, "SAME51G19A", 512, 192 },	/* New in rev D */
-	{ 0x06, "SAME51G18A", 256, 128 },	/* New in rev D */
 };
 
 /* Known SAME53 parts. */
@@ -135,9 +142,6 @@ static const struct samd_part same53_parts[] = {
 	{ 0x04, "SAME53J20A", 1024, 256 },
 	{ 0x05, "SAME53J19A", 512, 192 },
 	{ 0x06, "SAME53J18A", 256, 128 },
-	{ 0x55, "LAN9255/ZMX020", 1024, 256 },
-	{ 0x56, "LAN9255/ZMX019", 512, 192 },
-	{ 0x57, "LAN9255/ZMX018", 256, 128 },
 };
 
 /* Known SAME54 parts. */
@@ -213,7 +217,7 @@ static const struct samd_part *samd_find_part(uint32_t id)
 {
 	uint8_t devsel = SAMD_GET_DEVSEL(id);
 	const struct samd_family *family = samd_find_family(id);
-	if (!family)
+	if (family == NULL)
 		return NULL;
 
 	for (unsigned i = 0; i < family->num_parts; i++) {
@@ -226,7 +230,7 @@ static const struct samd_part *samd_find_part(uint32_t id)
 
 static int same5_protect_check(struct flash_bank *bank)
 {
-	int res;
+	int res, prot_block;
 	uint32_t lock;
 
 	res = target_read_u32(bank->target,
@@ -235,7 +239,7 @@ static int same5_protect_check(struct flash_bank *bank)
 		return res;
 
 	/* Lock bits are active-low */
-	for (unsigned int prot_block = 0; prot_block < bank->num_prot_blocks; prot_block++)
+	for (prot_block = 0; prot_block < bank->num_prot_blocks; prot_block++)
 		bank->prot_blocks[prot_block].is_protected = !(lock & (1u<<prot_block));
 
 	return ERROR_OK;
@@ -280,7 +284,7 @@ static int same5_probe(struct flash_bank *bank)
 	}
 
 	part = samd_find_part(id);
-	if (!part) {
+	if (part == NULL) {
 		LOG_ERROR("Couldn't find part corresponding to DID %08" PRIx32, id);
 		return ERROR_FAIL;
 	}
@@ -334,28 +338,19 @@ static int same5_probe(struct flash_bank *bank)
 static int same5_wait_and_check_error(struct target *target)
 {
 	int ret, ret2;
-	/* Table 54-40 lists the maximum erase block time as 200 ms.
-	 * Include some margin.
-	 */
-	int timeout_ms = 200 * 5;
-	int64_t ts_start = timeval_ms();
+	int rep_cnt = 100;
 	uint16_t intflag;
 
 	do {
 		ret = target_read_u16(target,
 			SAMD_NVMCTRL + SAME5_NVMCTRL_INTFLAG, &intflag);
-		if (ret != ERROR_OK) {
-			LOG_ERROR("SAM: error reading the NVMCTRL_INTFLAG register");
-			return ret;
-		}
-		if (intflag & SAME5_NVMCTRL_INTFLAG_DONE)
+		if (ret == ERROR_OK && intflag & SAME5_NVMCTRL_INTFLAG_DONE)
 			break;
-		keep_alive();
-	} while (timeval_ms() - ts_start < timeout_ms);
+	} while (--rep_cnt);
 
-	if (!(intflag & SAME5_NVMCTRL_INTFLAG_DONE)) {
-		LOG_ERROR("SAM: NVM programming timed out");
-		ret = ERROR_FLASH_OPERATION_FAILED;
+	if (ret != ERROR_OK) {
+		LOG_ERROR("Can't read NVM INTFLAG");
+		return ret;
 	}
 #if 0
 	if (intflag & SAME5_NVMCTRL_INTFLAG_ECCSE)
@@ -564,10 +559,10 @@ static int same5_modify_user_row(struct target *target, uint32_t value,
 			buf_val, buf_mask, 0, 8);
 }
 
-static int same5_protect(struct flash_bank *bank, int set, unsigned int first,
-		unsigned int last)
+static int same5_protect(struct flash_bank *bank, int set, int first_prot_bl, int last_prot_bl)
 {
 	int res = ERROR_OK;
+	int prot_block;
 
 	/* We can issue lock/unlock region commands with the target running but
 	 * the settings won't persist unless we're able to modify the LOCK regions
@@ -577,7 +572,7 @@ static int same5_protect(struct flash_bank *bank, int set, unsigned int first,
 		return ERROR_TARGET_NOT_HALTED;
 	}
 
-	for (unsigned int prot_block = first; prot_block <= last; prot_block++) {
+	for (prot_block = first_prot_bl; prot_block <= last_prot_bl; prot_block++) {
 		if (set != bank->prot_blocks[prot_block].is_protected) {
 			/* Load an address that is within this protection block (we use offset 0) */
 			res = target_write_u32(bank->target,
@@ -601,7 +596,7 @@ static int same5_protect(struct flash_bank *bank, int set, unsigned int first,
 	const uint8_t unlock[4] = { 0xff, 0xff, 0xff, 0xff };
 	uint8_t mask[4] = { 0, 0, 0, 0 };
 
-	buf_set_u32(mask, first, last + 1 - first, 0xffffffff);
+	buf_set_u32(mask, first_prot_bl, last_prot_bl + 1 - first_prot_bl, 0xffffffff);
 
 	res = same5_modify_user_row_masked(bank->target,
 			set ? lock : unlock, mask, 8, 4);
@@ -616,10 +611,9 @@ exit:
 	return res;
 }
 
-static int same5_erase(struct flash_bank *bank, unsigned int first,
-		unsigned int last)
+static int same5_erase(struct flash_bank *bank, int first_sect, int last_sect)
 {
-	int res;
+	int res, s;
 	struct samd_info *chip = (struct samd_info *)bank->driver_priv;
 
 	if (bank->target->state != TARGET_HALTED) {
@@ -632,7 +626,7 @@ static int same5_erase(struct flash_bank *bank, unsigned int first,
 		return ERROR_FLASH_BANK_NOT_PROBED;
 
 	/* For each sector to be erased */
-	for (unsigned int s = first; s <= last; s++) {
+	for (s = first_sect; s <= last_sect; s++) {
 		res = same5_erase_block(bank->target, bank->sectors[s].offset);
 		if (res != ERROR_OK) {
 			LOG_ERROR("SAM: failed to erase sector %d at 0x%08" PRIx32, s, bank->sectors[s].offset);
@@ -726,7 +720,9 @@ static int same5_write(struct flash_bank *bank, const uint8_t *buffer,
 	}
 
 free_pb:
-	free(pb);
+	if (pb)
+		free(pb);
+
 	return res;
 }
 
@@ -735,7 +731,7 @@ FLASH_BANK_COMMAND_HANDLER(same5_flash_bank_command)
 {
 	if (bank->base != SAMD_FLASH) {
 		LOG_ERROR("Address " TARGET_ADDR_FMT " invalid bank address (try "
-			"0x%08x[same5] )", bank->base, SAMD_FLASH);
+			"0x%08" PRIx32 "[same5] )", bank->base, SAMD_FLASH);
 		return ERROR_FAIL;
 	}
 
@@ -769,9 +765,9 @@ COMMAND_HANDLER(same5_handle_chip_erase_command)
 	 * perform the erase. */
 	int res = target_write_u8(target, SAMD_DSU + SAMD_DSU_CTRL_EXT, (1<<4));
 	if (res == ERROR_OK)
-		command_print(CMD, "chip erase started");
+		command_print(CMD_CTX, "chip erase started");
 	else
-		command_print(CMD, "write to DSU CTRL failed");
+		command_print(CMD_CTX, "write to DSU CTRL failed");
 
 	return res;
 }
@@ -785,17 +781,16 @@ COMMAND_HANDLER(same5_handle_userpage_command)
 		return ERROR_FAIL;
 
 	if (CMD_ARGC > 2) {
-		command_print(CMD, "Too much Arguments given.");
+		command_print(CMD_CTX, "Too much Arguments given.");
 		return ERROR_COMMAND_SYNTAX_ERROR;
 	}
 
 	if (CMD_ARGC >= 1) {
-		uint64_t value, mask = NVMUSERROW_SAM_E5_D5_MASK;
-		COMMAND_PARSE_NUMBER(u64, CMD_ARGV[0], value);
+		uint64_t mask = NVMUSERROW_SAM_E5_D5_MASK;
+		uint64_t value = strtoull(CMD_ARGV[0], NULL, 0);
 
 		if (CMD_ARGC == 2) {
-			uint64_t mask_temp;
-			COMMAND_PARSE_NUMBER(u64, CMD_ARGV[1], mask_temp);
+			uint64_t mask_temp = strtoull(CMD_ARGV[1], NULL, 0);
 			mask &= mask_temp;
 		}
 
@@ -811,7 +806,7 @@ COMMAND_HANDLER(same5_handle_userpage_command)
 	int res2 = target_read_memory(target, SAMD_USER_ROW, 4, 2, buffer);
 	if (res2 == ERROR_OK) {
 		uint64_t value = target_buffer_get_u64(target, buffer);
-		command_print(CMD, "USER PAGE: 0x%016"PRIX64, value);
+		command_print(CMD_CTX, "USER PAGE: 0x%016"PRIX64, value);
 	} else {
 		LOG_ERROR("USER PAGE could not be read.");
 	}
@@ -831,12 +826,10 @@ COMMAND_HANDLER(same5_handle_bootloader_command)
 		return ERROR_FAIL;
 
 	if (CMD_ARGC >= 1) {
-		unsigned long size;
-
-		COMMAND_PARSE_NUMBER(ulong, CMD_ARGV[0], size);
+		unsigned long size = strtoul(CMD_ARGV[0], NULL, 0);
 		uint32_t code = (size + 8191) / 8192;
 		if (code > 15) {
-			command_print(CMD, "Invalid bootloader size.  Please "
+			command_print(CMD_CTX, "Invalid bootloader size.  Please "
 						"see datasheet for a list valid sizes.");
 			return ERROR_COMMAND_SYNTAX_ERROR;
 		}
@@ -849,7 +842,7 @@ COMMAND_HANDLER(same5_handle_bootloader_command)
 	if (res2 == ERROR_OK) {
 		uint32_t code = (val >> 26) & 0xf; /* grab size code */
 		uint32_t size = (15 - code) * 8192;
-		command_print(CMD, "Bootloader protected in the first %"
+		command_print(CMD_CTX, "Bootloader protected in the first %"
 				      PRIu32 " bytes", size);
 	}
 
@@ -903,7 +896,7 @@ static const struct command_registration same5_exec_command_handlers[] = {
 		.usage = "",
 		.handler = samd_handle_reset_deassert,
 		.mode = COMMAND_EXEC,
-		.help = "Deassert internal reset held by DSU."
+		.help = "Deasert internal reset held by DSU."
 	},
 	{
 		.name = "chip-erase",

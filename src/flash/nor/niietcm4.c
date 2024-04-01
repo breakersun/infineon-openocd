@@ -1,8 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2015 by Bogdan Kolbov                                   *
  *   kolbov@niiet.ru                                                       *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -54,8 +65,8 @@
 #define FCIS_OP_ERROR				(1<<1)				/* Flag operation error */
 
 /*---- FCIC: CLear status register */
-#define FCIC_CLR_OPCMLT				(1<<0)				/* Clear completion flag in register FCIS */
-#define FCIC_CLR_OPERROR			(1<<1)				/* Clear error flag in register FCIS */
+#define FCIC_CLR_OPCMLT				(1<<0)				/* Cleare completion flag in register FCIS */
+#define FCIC_CLR_OPERROR			(1<<1)				/* Cleare error flag in register FCIS */
 
 /*-- USERFLASH ---------------------------------------------------------------*/
 #define USERFLASH_PAGE_SIZE			256
@@ -84,8 +95,8 @@
 #define UFCIS_OP_ERROR				(1<<1)				/* Flag operation error */
 
 /*---- UFCIC: CLear status register */
-#define UFCIC_CLR_OPCMLT			(1<<0)				/* Clear completion flag in register FCIS */
-#define UFCIC_CLR_OPERROR			(1<<1)				/* Clear error flag in register FCIS */
+#define UFCIC_CLR_OPCMLT			(1<<0)				/* Cleared completion flag in register FCIS */
+#define UFCIC_CLR_OPERROR			(1<<1)				/* Cleared error flag in register FCIS */
 
 /*---- In info userflash address space */
 #define INFOWORD0_ADDR				0x00
@@ -319,8 +330,7 @@ static int niietcm4_uflash_page_erase(struct flash_bank *bank, int page_num, int
 /**
  * Enable or disable protection of userflash pages
  */
-static int niietcm4_uflash_protect(struct flash_bank *bank, int mem_type,
-		int set, unsigned int first, unsigned int last)
+static int niietcm4_uflash_protect(struct flash_bank *bank, int mem_type, int set, int first, int last)
 {
 	int retval;
 	if (mem_type == INFO_MEM_TYPE) {
@@ -349,7 +359,7 @@ static int niietcm4_uflash_protect(struct flash_bank *bank, int mem_type,
 		if (retval != ERROR_OK)
 			return retval;
 		/* modify dump */
-		for (unsigned int i = first; i <= last; i++) {
+		for (int i = first; i <= last; i++)	{
 			uint32_t reg_num = i/8;
 			uint32_t bit_num = i%8;
 			if (set)
@@ -400,7 +410,7 @@ COMMAND_HANDLER(niietcm4_handle_uflash_read_byte_command)
 	else
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
-	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[1], uflash_addr);
+	COMMAND_PARSE_NUMBER(uint, CMD_ARGV[1], uflash_addr);
 
 	retval = target_write_u32(target, UFMA, uflash_addr);
 	if (retval != ERROR_OK)
@@ -415,9 +425,9 @@ COMMAND_HANDLER(niietcm4_handle_uflash_read_byte_command)
 	retval = target_read_u32(target, UFMD, &uflash_data);
 	if (retval != ERROR_OK)
 		return retval;
-	command_print(CMD,  "Read userflash %s region:\n"
-						"address = 0x%04" PRIx32 ",\n"
-						"value   = 0x%02" PRIx32 ".", CMD_ARGV[0], uflash_addr, uflash_data);
+	command_print(CMD_CTX,  "Read userflash %s region:\n"
+							"address = 0x%04x,\n"
+							"value   = 0x%02x.", CMD_ARGV[0], uflash_addr, uflash_data);
 	return retval;
 }
 
@@ -452,15 +462,15 @@ COMMAND_HANDLER(niietcm4_handle_uflash_write_byte_command)
 	else
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
-	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[1], uflash_addr);
-	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[2], uflash_data);
+	COMMAND_PARSE_NUMBER(uint, CMD_ARGV[1], uflash_addr);
+	COMMAND_PARSE_NUMBER(uint, CMD_ARGV[2], uflash_data);
 
 	int page_num = uflash_addr/USERFLASH_PAGE_SIZE;
 
-	command_print(CMD, "Write userflash %s region:\n"
-					   "address = 0x%04" PRIx32 ",\n"
-					   "value   = 0x%02" PRIx32 ".\n"
-					   "Please wait ... ", CMD_ARGV[0], uflash_addr, uflash_data);
+	command_print(CMD_CTX, "Write userflash %s region:\n"
+						   "address = 0x%04x,\n"
+						   "value   = 0x%02x.\n"
+						   "Please wait ... ", CMD_ARGV[0], uflash_addr, uflash_data);
 	/* dump */
 	uint32_t uflash_dump[USERFLASH_PAGE_SIZE];
 	niietcm4_dump_uflash_page(bank, uflash_dump, page_num, mem_type);
@@ -473,7 +483,7 @@ COMMAND_HANDLER(niietcm4_handle_uflash_write_byte_command)
 
 	/* write dump to userflash */
 	niietcm4_load_uflash_page(bank, uflash_dump, page_num, mem_type);
-	command_print(CMD, "done!");
+	command_print(CMD_CTX, "done!");
 	return retval;
 }
 
@@ -510,7 +520,7 @@ COMMAND_HANDLER(niietcm4_handle_uflash_full_erase_command)
 	retval = niietcm4_uopstatus_check(bank);
 	if (retval != ERROR_OK)
 		return retval;
-	command_print(CMD, "Userflash full erase done!");
+	command_print(CMD_CTX, "Userflash full erase done!");
 
 	return retval;
 }
@@ -553,7 +563,7 @@ COMMAND_HANDLER(niietcm4_handle_uflash_erase_command)
 			return retval;
 	}
 
-	command_print(CMD, "Erase %s userflash pages %u through %u done!", CMD_ARGV[0], first, last);
+	command_print(CMD_CTX, "Erase %s userflash pages %d through %d done!", CMD_ARGV[0], first, last);
 
 	return retval;
 }
@@ -611,9 +621,9 @@ COMMAND_HANDLER(niietcm4_handle_uflash_protect_check_command)
 			return retval;
 
 		if (uflash_data & INFOWORD3_LOCK_IFB_UF)
-			command_print(CMD, "All sectors of info userflash are not protected!");
+			command_print(CMD_CTX, "All sectors of info userflash are not protected!");
 		else
-			command_print(CMD, "All sectors of info userflash are protected!");
+			command_print(CMD_CTX, "All sectors of info userflash are protected!");
 	} else {
 		uflash_addr = UF_LOCK_ADDR;
 		uflash_cmd = UFMC_MAGIC_KEY | UFMC_READ_IFB;
@@ -635,10 +645,10 @@ COMMAND_HANDLER(niietcm4_handle_uflash_protect_check_command)
 
 			for (j = 0; j < 8; j++) {
 				if (uflash_data & 0x1)
-					command_print(CMD, "Userflash sector #%03d: 0x%04x (0x100) is not protected!",
+					command_print(CMD_CTX, "Userflash sector #%03d: 0x%04x (0x100) is not protected!",
 											i*8+j, (i*8+j)*USERFLASH_PAGE_SIZE);
 				else
-					command_print(CMD, "Userflash sector #%03d: 0x%04x (0x100) is protected!",
+					command_print(CMD_CTX, "Userflash sector #%03d: 0x%04x (0x100) is protected!",
 											i*8+j, (i*8+j)*USERFLASH_PAGE_SIZE);
 				uflash_data = uflash_data >> 1;
 			}
@@ -683,11 +693,11 @@ COMMAND_HANDLER(niietcm4_handle_uflash_protect_command)
 
 	int set;
 	if (strcmp("on", CMD_ARGV[3]) == 0) {
-		command_print(CMD, "Try to enable %s userflash sectors %u through %u protection. Please wait ... ",
+		command_print(CMD_CTX, "Try to enable %s userflash sectors %d through %d protection. Please wait ... ",
 								CMD_ARGV[0], first, last);
 		set = 1;
 	} else if (strcmp("off", CMD_ARGV[3]) == 0) {
-		command_print(CMD, "Try to disable %s userflash sectors %u through %u protection. Please wait ... ",
+		command_print(CMD_CTX, "Try to disable %s userflash sectors %d through %d protection. Please wait ... ",
 								CMD_ARGV[0], first, last);
 		set = 0;
 	} else
@@ -697,7 +707,7 @@ COMMAND_HANDLER(niietcm4_handle_uflash_protect_command)
 		if (retval != ERROR_OK)
 			return retval;
 
-	command_print(CMD, "done!");
+	command_print(CMD_CTX, "done!");
 	return retval;
 }
 
@@ -723,10 +733,10 @@ COMMAND_HANDLER(niietcm4_handle_bflash_info_remap_command)
 
 	int set;
 	if (strcmp("on", CMD_ARGV[0]) == 0) {
-		command_print(CMD, "Try to enable bootflash info region remap. Please wait ...");
+		command_print(CMD_CTX, "Try to enable bootflash info region remap. Please wait ...");
 		set = 1;
 	} else if (strcmp("off", CMD_ARGV[0]) == 0) {
-		command_print(CMD, "Try to disable bootflash info region remap. Please wait ...");
+		command_print(CMD_CTX, "Try to disable bootflash info region remap. Please wait ...");
 		set = 0;
 	} else
 		return ERROR_COMMAND_SYNTAX_ERROR;
@@ -746,7 +756,7 @@ COMMAND_HANDLER(niietcm4_handle_bflash_info_remap_command)
 
 	/* write dump to userflash */
 	niietcm4_load_uflash_page(bank, uflash_dump, 0, 1);
-	command_print(CMD, "done!");
+	command_print(CMD_CTX, "done!");
 
 	return retval;
 }
@@ -792,7 +802,7 @@ COMMAND_HANDLER(niietcm4_handle_extmem_cfg_command)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
 	uint32_t pin;
-	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[1], pin);
+	COMMAND_PARSE_NUMBER(uint, CMD_ARGV[1], pin);
 	if (pin > 15)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
@@ -804,11 +814,11 @@ COMMAND_HANDLER(niietcm4_handle_extmem_cfg_command)
 	else
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
-	command_print(CMD,  "Try to configure external memory boot interface:\n"
-						"port = %s\n"
-						"pin  = %s\n"
-						"func = %s\n"
-						"Please wait ...", CMD_ARGV[0], CMD_ARGV[1], CMD_ARGV[2]);
+	command_print(CMD_CTX,  "Try to configure external memory boot interface:\n"
+							"port = %s\n"
+							"pin  = %s\n"
+							"func = %s\n"
+							"Please wait ...", CMD_ARGV[0], CMD_ARGV[1], CMD_ARGV[2]);
 	/* dump */
 	uint32_t uflash_dump[USERFLASH_PAGE_SIZE];
 	niietcm4_dump_uflash_page(bank, uflash_dump, 0, 1);
@@ -823,7 +833,7 @@ COMMAND_HANDLER(niietcm4_handle_extmem_cfg_command)
 
 	/* write dump to userflash */
 	niietcm4_load_uflash_page(bank, uflash_dump, 0, 1);
-	command_print(CMD, "done!");
+	command_print(CMD_CTX, "done!");
 
 	return retval;
 }
@@ -851,10 +861,10 @@ COMMAND_HANDLER(niietcm4_handle_extmem_boot_command)
 	int set;
 
 	if (strcmp("on", CMD_ARGV[0]) == 0) {
-		command_print(CMD, "Try to enable boot from external memory. Please wait ...");
+		command_print(CMD_CTX, "Try to enable boot from external memory. Please wait ...");
 		set = 1;
 	} else if (strcmp("off", CMD_ARGV[0]) == 0) {
-		command_print(CMD, "Try to disable boot from external memory. Please wait ...");
+		command_print(CMD_CTX, "Try to disable boot from external memory. Please wait ...");
 		set = 0;
 	} else
 		return ERROR_COMMAND_SYNTAX_ERROR;
@@ -874,7 +884,7 @@ COMMAND_HANDLER(niietcm4_handle_extmem_boot_command)
 
 	/* write dump to userflash */
 	niietcm4_load_uflash_page(bank, uflash_dump, 0, 1);
-	command_print(CMD, "done!");
+	command_print(CMD_CTX, "done!");
 
 	return retval;
 }
@@ -890,7 +900,7 @@ COMMAND_HANDLER(niietcm4_handle_service_mode_erase_command)
 		return retval;
 	struct target *target = bank->target;
 
-	command_print(CMD, "Try to perform service mode erase. Please wait ...");
+	command_print(CMD_CTX, "Try to perform service mode erase. Please wait ...");
 
 	retval = target_write_u32(target, SERVICE_MODE_ERASE_ADDR, 1);
 	if (retval != ERROR_OK)
@@ -913,7 +923,7 @@ COMMAND_HANDLER(niietcm4_handle_service_mode_erase_command)
 			}
 		busy_sleep(1);	/* can use busy sleep for short times. */
 	}
-	command_print(CMD, "done! All data erased.");
+	command_print(CMD_CTX, "done! All data erased.");
 
 	return retval;
 }
@@ -928,7 +938,7 @@ COMMAND_HANDLER(niietcm4_handle_driver_info_command)
 	if (retval != ERROR_OK)
 		return retval;
 
-	command_print(CMD, "niietcm4 flash driver\n"
+	command_print(CMD_CTX, "niietcm4 flash driver\n"
 						   "version: %d.%d\n"
 						   "author: Bogdan Kolbov\n"
 						   "mail: kolbov@niiet.ru",
@@ -1101,7 +1111,7 @@ static int niietcm4_protect_check(struct flash_bank *bank)
 	} else {
 		uflash_addr = BF_LOCK_ADDR;
 		uflash_cmd = UFMC_MAGIC_KEY | UFMC_READ_IFB;
-		for (unsigned int i = 0; i < bank->num_sectors/8; i++) {
+		for (int i = 0; i < bank->num_sectors/8; i++) {
 			retval = target_write_u32(target, UFMA, uflash_addr);
 			if (retval != ERROR_OK)
 				return retval;
@@ -1153,8 +1163,7 @@ static int niietcm4_mass_erase(struct flash_bank *bank)
 	return retval;
 }
 
-static int niietcm4_erase(struct flash_bank *bank, unsigned int first,
-		unsigned int last)
+static int niietcm4_erase(struct flash_bank *bank, int first, int last)
 {
 	struct target *target = bank->target;
 	struct niietcm4_flash_bank *niietcm4_info = bank->driver_priv;
@@ -1179,7 +1188,7 @@ static int niietcm4_erase(struct flash_bank *bank, unsigned int first,
 
 	/* erasing pages */
 	unsigned int page_size = bank->size / bank->num_sectors;
-	for (unsigned int i = first; i <= last; i++) {
+	for (int i = first; i <= last; i++) {
 		/* current page addr */
 		flash_addr = i*page_size;
 		retval = target_write_u32(target, FMA, flash_addr);
@@ -1195,13 +1204,14 @@ static int niietcm4_erase(struct flash_bank *bank, unsigned int first,
 		retval = niietcm4_opstatus_check(bank);
 		if (retval != ERROR_OK)
 			return retval;
+
+		bank->sectors[i].is_erased = 1;
 	}
 
 	return retval;
 }
 
-static int niietcm4_protect(struct flash_bank *bank, int set,
-		unsigned int first, unsigned int last)
+static int niietcm4_protect(struct flash_bank *bank, int set, int first, int last)
 {
 	struct target *target = bank->target;
 	struct niietcm4_flash_bank *niietcm4_info = bank->driver_priv;
@@ -1213,7 +1223,7 @@ static int niietcm4_protect(struct flash_bank *bank, int set,
 		return ERROR_TARGET_NOT_HALTED;
 	}
 
-	LOG_INFO("Please wait ..."); /* it`s quite a long process */
+	LOG_INFO("Plese wait ..."); /* it`s quite a long process */
 	/* chose between main bootflash and info bootflash */
 	if (niietcm4_info->bflash_info_remap) {
 		/* dump */
@@ -1241,7 +1251,7 @@ static int niietcm4_protect(struct flash_bank *bank, int set,
 		if (retval != ERROR_OK)
 			return retval;
 		/* modify dump */
-		for (unsigned int i = first; i <= last; i++)	{
+		for (int i = first; i <= last; i++)	{
 			uint32_t reg_num = i/8;
 			uint32_t bit_num = i%8;
 			if (set)
@@ -1381,7 +1391,7 @@ static int niietcm4_write(struct flash_bank *bank, const uint8_t *buffer,
 	int rem = count % 16;
 	if (rem) {
 		new_buffer = malloc(count + 16 - rem);
-		if (!new_buffer) {
+		if (new_buffer == NULL) {
 			LOG_ERROR("Odd number of words to write and no memory for padding buffer");
 			return ERROR_FAIL;
 		}
@@ -1403,7 +1413,7 @@ static int niietcm4_write(struct flash_bank *bank, const uint8_t *buffer,
 		/* if block write failed (no sufficient working area),
 		 * we use normal (slow) single halfword accesses */
 		LOG_WARNING("Can't use block writes, falling back to single memory accesses");
-		LOG_INFO("Please wait ..."); /* it`s quite a long process */
+		LOG_INFO("Plese wait ..."); /* it`s quite a long process */
 
 		/* chose between main bootflash and info bootflash */
 		if (niietcm4_info->bflash_info_remap)
@@ -1414,7 +1424,7 @@ static int niietcm4_write(struct flash_bank *bank, const uint8_t *buffer,
 		/* write 16 bytes per try */
 		for (unsigned int i = 0; i < count; i += 16) {
 			/* current addr */
-			LOG_INFO("%u byte of %" PRIu32, i, count);
+			LOG_INFO("%d byte of %d", i, count);
 			flash_addr = offset + i;
 			retval = target_write_u32(target, FMA, flash_addr);
 			if (retval != ERROR_OK)
@@ -1456,7 +1466,9 @@ static int niietcm4_write(struct flash_bank *bank, const uint8_t *buffer,
 	}
 
 free_buffer:
-	free(new_buffer);
+	if (new_buffer)
+		free(new_buffer);
+
 	return retval;
 }
 
@@ -1573,41 +1585,41 @@ static int niietcm4_probe_k1921vk01t(struct flash_bank *bank)
 		char info_bootflash_addr_str[64];
 		if (niietcm4_info->bflash_info_remap)
 			snprintf(info_bootflash_addr_str, sizeof(info_bootflash_addr_str),
-					TARGET_ADDR_FMT " base address", bank->base);
+					TARGET_ADDR_FMT " base adress", bank->base);
 		else
 			snprintf(info_bootflash_addr_str, sizeof(info_bootflash_addr_str),
-					"not mapped to global address space");
+					"not mapped to global adress space");
 
 		snprintf(niietcm4_info->chip_brief,
 				sizeof(niietcm4_info->chip_brief),
 				"\n"
 				"MEMORY CONFIGURATION\n"
 				"Bootflash :\n"
-				"    %" PRIu32 " kB total\n"
-				"    %" PRIu32 " pages %" PRIu32 " kB each\n"
-				"    0x%08" PRIx32 " base address\n"
+				"    %d kB total\n"
+				"    %d pages %d kB each\n"
+				"    0x%08x base adress\n"
 				"%s"
 				"Info bootflash :\n"
-				"    %" PRIu32 " kB total\n"
-				"    %" PRIu32 " pages %" PRIu32 " kB each\n"
+				"    %d kB total\n"
+				"    %d pages %d kB each\n"
 				"    %s\n"
 				"%s"
 				"Userflash :\n"
-				"    %" PRIu32 " kB total\n"
-				"    %" PRIu32 " pages %" PRIu32 " B each\n"
-				"    %" PRIu32 " bit cells\n"
-				"    not mapped to global address space\n"
+				"    %d kB total\n"
+				"    %d pages %d B each\n"
+				"    %d bit cells\n"
+				"    not maped to global adress space\n"
 				"Info userflash :\n"
-				"    %" PRIu32 " B total\n"
-				"    %" PRIu32 " pages of %" PRIu32 " B each\n"
-				"    %" PRIu32 " bit cells\n"
-				"    not mapped to global address space\n"
+				"    %d B total\n"
+				"    %d pages of %d B each\n"
+				"    %d bit cells\n"
+				"    not maped to global adress space\n"
 				"RAM :\n"
 				"    192 kB total\n"
-				"    0x20000000 base address\n"
+				"    0x20000000 base adress\n"
 				"External memory :\n"
 				"    8/16 bit address space\n"
-				"    0x%08" PRIx32 " base address\n"
+				"    0x%08x base adress\n"
 				"\n"
 				"INFOWORD STATUS\n"
 				"Bootflash info region remap :\n"
@@ -1615,9 +1627,9 @@ static int niietcm4_probe_k1921vk01t(struct flash_bank *bank)
 				"External memory boot port :\n"
 				"    %s\n"
 				"External memory boot pin :\n"
-				"    %" PRIu32 "\n"
+				"    %d\n"
 				"External memory interface alternative function :\n"
-				"    %" PRIu32 "\n"
+				"    %d\n"
 				"Option boot from external memory :\n"
 				"    %s\n",
 				bflash_size/1024,
@@ -1644,7 +1656,7 @@ static int niietcm4_probe_k1921vk01t(struct flash_bank *bank)
 				niietcm4_info->extmem_boot_pin,
 				niietcm4_info->extmem_boot_altfunc,
 				niietcm4_info->extmem_boot ? "enable" : "disable");
-	} else {
+	} else{
 		bank->size = 0x100000;
 		bank->num_sectors = 128;
 
@@ -1666,9 +1678,10 @@ static int niietcm4_probe(struct flash_bank *bank)
 	struct niietcm4_flash_bank *niietcm4_info = bank->driver_priv;
 	struct target *target = bank->target;
 
-	free(bank->sectors);
-	bank->sectors = NULL;
-
+	if (bank->sectors) {
+		free(bank->sectors);
+		bank->sectors = NULL;
+	}
 	uint32_t retval;
 	uint32_t chipid;
 
@@ -1706,11 +1719,12 @@ static int niietcm4_auto_probe(struct flash_bank *bank)
 	return niietcm4_probe(bank);
 }
 
-static int get_niietcm4_info(struct flash_bank *bank, struct command_invocation *cmd)
+static int get_niietcm4_info(struct flash_bank *bank, char *buf, int buf_size)
 {
 	struct niietcm4_flash_bank *niietcm4_info = bank->driver_priv;
-	command_print_sameline(cmd, "\nNIIET Cortex-M4F %s\n%s",
-			niietcm4_info->chip_name, niietcm4_info->chip_brief);
+	LOG_INFO("\nNIIET Cortex-M4F %s\n%s", niietcm4_info->chip_name, niietcm4_info->chip_brief);
+	snprintf(buf, buf_size, " ");
+
 	return ERROR_OK;
 }
 

@@ -1,6 +1,4 @@
 #!/bin/sh
-# SPDX-License-Identifier: GPL-2.0-or-later
-
 # Run the autotools bootstrap sequence to create the configure script
 
 # Abort execution on error
@@ -26,12 +24,11 @@ fi
 # bootstrap the autotools
 (
 set -x
-aclocal --warnings=all
-# Apparently, not all versions of libtoolize support option --warnings=all .
+aclocal
 ${libtoolize} --automake --copy
-autoconf --warnings=all
-autoheader --warnings=all
-automake --warnings=all --gnu --add-missing --copy
+autoconf
+autoheader
+automake --gnu --add-missing --copy
 )
 
 if [ -n "$SKIP_SUBMODULE" ]; then

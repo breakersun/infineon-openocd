@@ -1,6 +1,17 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -16,18 +27,18 @@
 #include "helper/types.h"
 #include "rtos_ecos_stackings.h"
 
-static bool ecos_detect_rtos(struct target *target);
-static int ecos_create(struct target *target);
-static int ecos_update_threads(struct rtos *rtos);
-static int ecos_get_thread_reg_list(struct rtos *rtos, int64_t thread_id, struct rtos_reg **reg_list, int *num_regs);
-static int ecos_get_symbol_list_to_lookup(struct symbol_table_elem *symbol_list[]);
+static bool eCos_detect_rtos(struct target *target);
+static int eCos_create(struct target *target);
+static int eCos_update_threads(struct rtos *rtos);
+static int eCos_get_thread_reg_list(struct rtos *rtos, int64_t thread_id, struct rtos_reg **reg_list, int *num_regs);
+static int eCos_get_symbol_list_to_lookup(symbol_table_elem_t *symbol_list[]);
 
-struct ecos_thread_state {
+struct eCos_thread_state {
 	int value;
 	const char *desc;
 };
 
-static const struct ecos_thread_state ecos_thread_states[] = {
+static const struct eCos_thread_state eCos_thread_states[] = {
 	{ 0, "Ready" },
 	{ 1, "Sleeping" },
 	{ 2, "Countsleep" },
@@ -36,9 +47,9 @@ static const struct ecos_thread_state ecos_thread_states[] = {
 	{ 16, "Exited" }
 };
 
-#define ECOS_NUM_STATES ARRAY_SIZE(ecos_thread_states)
+#define ECOS_NUM_STATES (sizeof(eCos_thread_states)/sizeof(struct eCos_thread_state))
 
-struct ecos_params {
+struct eCos_params {
 	const char *target_name;
 	unsigned char pointer_width;
 	unsigned char thread_stack_offset;
@@ -49,7 +60,7 @@ struct ecos_params {
 	const struct rtos_register_stacking *stacking_info;
 };
 
-static const struct ecos_params ecos_params_list[] = {
+static const struct eCos_params eCos_params_list[] = {
 	{
 	"cortex_m",			/* target_name */
 	4,						/* pointer_width; */
@@ -58,53 +69,55 @@ static const struct ecos_params ecos_params_list[] = {
 	0x3c,					/* thread_state_offset; */
 	0xa0,					/* thread_next_offset */
 	0x4c,					/* thread_uniqueid_offset */
-	&rtos_ecos_cortex_m3_stacking	/* stacking_info */
+	&rtos_eCos_Cortex_M3_stacking	/* stacking_info */
 	}
 };
 
-enum ecos_symbol_values {
-	ECOS_VAL_THREAD_LIST = 0,
-	ECOS_VAL_CURRENT_THREAD_PTR = 1
+#define ECOS_NUM_PARAMS ((int)(sizeof(eCos_params_list)/sizeof(struct eCos_params)))
+
+enum eCos_symbol_values {
+	eCos_VAL_thread_list = 0,
+	eCos_VAL_current_thread_ptr = 1
 };
 
-static const char * const ecos_symbol_list[] = {
+static const char * const eCos_symbol_list[] = {
 	"Cyg_Thread::thread_list",
 	"Cyg_Scheduler_Base::current_thread",
 	NULL
 };
 
-const struct rtos_type ecos_rtos = {
+const struct rtos_type eCos_rtos = {
 	.name = "eCos",
 
-	.detect_rtos = ecos_detect_rtos,
-	.create = ecos_create,
-	.update_threads = ecos_update_threads,
-	.get_thread_reg_list = ecos_get_thread_reg_list,
-	.get_symbol_list_to_lookup = ecos_get_symbol_list_to_lookup,
+	.detect_rtos = eCos_detect_rtos,
+	.create = eCos_create,
+	.update_threads = eCos_update_threads,
+	.get_thread_reg_list = eCos_get_thread_reg_list,
+	.get_symbol_list_to_lookup = eCos_get_symbol_list_to_lookup,
 
 };
 
-static int ecos_update_threads(struct rtos *rtos)
+static int eCos_update_threads(struct rtos *rtos)
 {
 	int retval;
 	int tasks_found = 0;
 	int thread_list_size = 0;
-	const struct ecos_params *param;
+	const struct eCos_params *param;
 
-	if (!rtos)
+	if (rtos == NULL)
 		return -1;
 
-	if (!rtos->rtos_specific_params)
+	if (rtos->rtos_specific_params == NULL)
 		return -3;
 
-	param = (const struct ecos_params *) rtos->rtos_specific_params;
+	param = (const struct eCos_params *) rtos->rtos_specific_params;
 
-	if (!rtos->symbols) {
+	if (rtos->symbols == NULL) {
 		LOG_ERROR("No symbols for eCos");
 		return -4;
 	}
 
-	if (rtos->symbols[ECOS_VAL_THREAD_LIST].address == 0) {
+	if (rtos->symbols[eCos_VAL_thread_list].address == 0) {
 		LOG_ERROR("Don't have the thread list head");
 		return -2;
 	}
@@ -113,7 +126,7 @@ static int ecos_update_threads(struct rtos *rtos)
 	rtos_free_threadlist(rtos);
 
 	/* determine the number of current threads */
-	uint32_t thread_list_head = rtos->symbols[ECOS_VAL_THREAD_LIST].address;
+	uint32_t thread_list_head = rtos->symbols[eCos_VAL_thread_list].address;
 	uint32_t thread_index;
 	target_read_buffer(rtos->target,
 		thread_list_head,
@@ -133,7 +146,7 @@ static int ecos_update_threads(struct rtos *rtos)
 	/* read the current thread id */
 	uint32_t current_thread_addr;
 	retval = target_read_buffer(rtos->target,
-			rtos->symbols[ECOS_VAL_CURRENT_THREAD_PTR].address,
+			rtos->symbols[eCos_VAL_current_thread_ptr].address,
 			4,
 			(uint8_t *)&current_thread_addr);
 	if (retval != ERROR_OK)
@@ -235,7 +248,7 @@ static int ecos_update_threads(struct rtos *rtos)
 			return retval;
 		}
 
-		for (i = 0; (i < ECOS_NUM_STATES) && (ecos_thread_states[i].value != thread_status); i++) {
+		for (i = 0; (i < ECOS_NUM_STATES) && (eCos_thread_states[i].value != thread_status); i++) {
 			/*
 			 * empty
 			 */
@@ -243,7 +256,7 @@ static int ecos_update_threads(struct rtos *rtos)
 
 		const char *state_desc;
 		if  (i < ECOS_NUM_STATES)
-			state_desc = ecos_thread_states[i].desc;
+			state_desc = eCos_thread_states[i].desc;
 		else
 			state_desc = "Unknown state";
 
@@ -257,7 +270,7 @@ static int ecos_update_threads(struct rtos *rtos)
 		prev_thread_ptr = thread_index;
 
 		/* Get the location of the next thread structure. */
-		thread_index = rtos->symbols[ECOS_VAL_THREAD_LIST].address;
+		thread_index = rtos->symbols[eCos_VAL_thread_list].address;
 		retval = target_read_buffer(rtos->target,
 				prev_thread_ptr + param->thread_next_offset,
 				param->pointer_width,
@@ -272,26 +285,26 @@ static int ecos_update_threads(struct rtos *rtos)
 	return 0;
 }
 
-static int ecos_get_thread_reg_list(struct rtos *rtos, int64_t thread_id,
+static int eCos_get_thread_reg_list(struct rtos *rtos, int64_t thread_id,
 		struct rtos_reg **reg_list, int *num_regs)
 {
 	int retval;
-	const struct ecos_params *param;
+	const struct eCos_params *param;
 
-	if (!rtos)
+	if (rtos == NULL)
 		return -1;
 
 	if (thread_id == 0)
 		return -2;
 
-	if (!rtos->rtos_specific_params)
+	if (rtos->rtos_specific_params == NULL)
 		return -3;
 
-	param = (const struct ecos_params *) rtos->rtos_specific_params;
+	param = (const struct eCos_params *) rtos->rtos_specific_params;
 
 	/* Find the thread with that thread id */
 	uint16_t id = 0;
-	uint32_t thread_list_head = rtos->symbols[ECOS_VAL_THREAD_LIST].address;
+	uint32_t thread_list_head = rtos->symbols[eCos_VAL_thread_list].address;
 	uint32_t thread_index;
 	target_read_buffer(rtos->target, thread_list_head, param->pointer_width,
 			(uint8_t *)&thread_index);
@@ -338,38 +351,42 @@ static int ecos_get_thread_reg_list(struct rtos *rtos, int64_t thread_id,
 	return -1;
 }
 
-static int ecos_get_symbol_list_to_lookup(struct symbol_table_elem *symbol_list[])
+static int eCos_get_symbol_list_to_lookup(symbol_table_elem_t *symbol_list[])
 {
 	unsigned int i;
 	*symbol_list = calloc(
-			ARRAY_SIZE(ecos_symbol_list), sizeof(struct symbol_table_elem));
+			ARRAY_SIZE(eCos_symbol_list), sizeof(symbol_table_elem_t));
 
-	for (i = 0; i < ARRAY_SIZE(ecos_symbol_list); i++)
-		(*symbol_list)[i].symbol_name = ecos_symbol_list[i];
+	for (i = 0; i < ARRAY_SIZE(eCos_symbol_list); i++)
+		(*symbol_list)[i].symbol_name = eCos_symbol_list[i];
 
 	return 0;
 }
 
-static bool ecos_detect_rtos(struct target *target)
+static bool eCos_detect_rtos(struct target *target)
 {
-	if ((target->rtos->symbols) &&
-			(target->rtos->symbols[ECOS_VAL_THREAD_LIST].address != 0)) {
+	if ((target->rtos->symbols != NULL) &&
+			(target->rtos->symbols[eCos_VAL_thread_list].address != 0)) {
 		/* looks like eCos */
 		return true;
 	}
 	return false;
 }
 
-static int ecos_create(struct target *target)
+static int eCos_create(struct target *target)
 {
-	for (unsigned int i = 0; i < ARRAY_SIZE(ecos_params_list); i++)
-		if (strcmp(ecos_params_list[i].target_name, target->type->name) == 0) {
-			target->rtos->rtos_specific_params = (void *)&ecos_params_list[i];
-			target->rtos->current_thread = 0;
-			target->rtos->thread_details = NULL;
-			return 0;
-		}
+	int i = 0;
+	while ((i < ECOS_NUM_PARAMS) &&
+		(0 != strcmp(eCos_params_list[i].target_name, target->type->name))) {
+		i++;
+	}
+	if (i >= ECOS_NUM_PARAMS) {
+		LOG_ERROR("Could not find target in eCos compatibility list");
+		return -1;
+	}
 
-	LOG_ERROR("Could not find target in eCos compatibility list");
-	return -1;
+	target->rtos->rtos_specific_params = (void *) &eCos_params_list[i];
+	target->rtos->current_thread = 0;
+	target->rtos->thread_details = NULL;
+	return 0;
 }

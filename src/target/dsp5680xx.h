@@ -1,11 +1,22 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
-
 /***************************************************************************
  *   Copyright (C) 2011 by Rodrigo L. Rosa                                 *
  *   rodrigorosa.LG@gmail.com                                              *
  *                                                                         *
  *   Based on dsp563xx_once.h written by Mathias Kuester                   *
  *   mkdorg@users.sourceforge.net                                          *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifndef OPENOCD_TARGET_DSP5680XX_H
@@ -227,7 +238,7 @@
  * ----------------------------------------------------------------
  */
 #define MC568013_SIM_BASE_ADDR 0xF140
-#define MC56803X_2X_SIM_BASE_ADDR 0xF100
+#define MC56803x_2x_SIM_BASE_ADDR 0xF100
 
 #define SIM_CMD_RESET 0x10
  /**
@@ -278,6 +289,8 @@ struct dsp5680xx_common {
 	bool debug_mode_enabled;
 };
 
+extern struct dsp5680xx_common dsp5680xx_context;
+
 static inline struct dsp5680xx_common *target_to_dsp5680xx(struct target
 							   *target)
 {
@@ -302,7 +315,7 @@ static inline struct dsp5680xx_common *target_to_dsp5680xx(struct target
  *
  * @return
  */
-int dsp5680xx_f_wr(struct target *target, const uint8_t *buffer, uint32_t address,
+int dsp5680xx_f_wr(struct target *target, const uint8_t * buffer, uint32_t address,
 		uint32_t count, int is_flash_lock);
 
 /**
@@ -316,7 +329,7 @@ int dsp5680xx_f_wr(struct target *target, const uint8_t *buffer, uint32_t addres
  *
  * @return
  */
-int dsp5680xx_f_erase_check(struct target *target, uint8_t *erased,
+int dsp5680xx_f_erase_check(struct target *target, uint8_t * erased,
 		uint32_t sector);
 
 /**
@@ -341,7 +354,7 @@ int dsp5680xx_f_erase(struct target *target, int first, int last);
  *
  * @return
  */
-int dsp5680xx_f_protect_check(struct target *target, uint16_t *protected);
+int dsp5680xx_f_protect_check(struct target *target, uint16_t * protected);
 
 /**
  * Writes the flash security words with a specific value. The chip's security will be

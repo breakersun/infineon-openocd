@@ -1,11 +1,22 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
-
 /***************************************************************************
  *   Copyright (C) 2005 by Dominic Rath <Dominic.Rath@gmx.de>              *
  *   Copyright (C) 2007,2008 Øyvind Harboe <oyvind.harboe@zylin.com>       *
  *   Copyright (C) 2008 by Spencer Oliver <spen@spen-soft.co.uk>           *
  *   Copyright (C) 2009 Zachary T Welch <zw@superlucidity.net>             *
  *   Copyright (C) 2010 by Antonio Borneo <borneo.antonio@gmail.com>       *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifndef OPENOCD_FLASH_NOR_CORE_H
@@ -19,6 +30,8 @@
  */
 
 struct image;
+
+#define FLASH_MAX_ERROR_STR	(128)
 
 /**
  * Describes the geometry and status of a single flash sector
@@ -80,12 +93,12 @@ struct flash_bank {
 	const struct flash_driver *driver; /**< Driver for this bank. */
 	void *driver_priv; /**< Private driver storage pointer */
 
-	unsigned int bank_number; /**< The 'bank' (or chip number) of this instance. */
+	int bank_number; /**< The 'bank' (or chip number) of this instance. */
 	target_addr_t base; /**< The base address of this bank */
 	uint32_t size; /**< The size of this chip bank, in bytes */
 
-	unsigned int chip_width; /**< Width of the chip in bytes (1,2,4 bytes) */
-	unsigned int bus_width; /**< Maximum bus width, in bytes (1,2,4 bytes) */
+	int chip_width; /**< Width of the chip in bytes (1,2,4 bytes) */
+	int bus_width; /**< Maximum bus width, in bytes (1,2,4 bytes) */
 
 	/** Erased value. Defaults to 0xFF. */
 	uint8_t erased_value;
@@ -106,23 +119,28 @@ struct flash_bank {
      * Can be size in bytes or FLASH_WRITE_CONTINUOUS */
 	uint32_t minimal_write_gap;
 
+	/** Controls whether this bank is memory-mapped. This affects how verification is done:
+	 * For memory-mapped banks CRC algorithm possible followed by target_read_memory will be used.
+	 * For non-mapped banks only drivers read() method will be used */
+	bool is_memory_mapped;
+
 	/**
 	 * The number of sectors on this chip.  This value will
-	 * be set initially to 0, and the flash driver must set this to
+	 * be set intially to 0, and the flash driver must set this to
 	 * some non-zero value during "probe()" or "auto_probe()".
 	 */
-	unsigned int num_sectors;
+	int num_sectors;
 	/** Array of sectors, allocated and initialized by the flash driver */
 	struct flash_sector *sectors;
 
 	/**
 	 * The number of protection blocks in this bank. This value
-	 * is set initially to 0 and sectors are used as protection blocks.
+	 * is set intially to 0 and sectors are used as protection blocks.
 	 * Driver probe can set protection blocks array to work with
 	 * protection granularity different than sector size.
 	 */
-	unsigned int num_prot_blocks;
-	/** Array of protection blocks, allocated and initialized by the flash driver */
+	int num_prot_blocks;
+	/** Array of protection blocks, allocated and initilized by the flash driver */
 	struct flash_sector *prot_blocks;
 
 	struct flash_bank *next; /**< The next flash bank on this chip */
@@ -166,12 +184,12 @@ target_addr_t flash_write_align_end(struct flash_bank *bank, target_addr_t addr)
  * @param target The target with the flash to be programmed.
  * @param image The image that will be programmed to flash.
  * @param written On return, contains the number of bytes written.
- * @param erase Indicates whether the flash driver should first
+ * @param erase If non-zero, indicates the flash driver should first
  * erase the corresponding banks or sectors before programming.
  * @returns ERROR_OK if successful; otherwise, an error code.
  */
 int flash_write(struct target *target,
-		struct image *image, uint32_t *written, bool erase);
+		struct image *image, uint32_t *written, int erase);
 
 /**
  * Forces targets to re-examine their erase/protection state.
@@ -180,14 +198,13 @@ int flash_write(struct target *target,
 void flash_set_dirty(void);
 
 /** @returns The number of flash banks currently defined. */
-unsigned int flash_get_bank_count(void);
+int flash_get_bank_count(void);
 
 /** Deallocates bank->driver_priv */
 void default_flash_free_driver_priv(struct flash_bank *bank);
 
 /** Deallocates all flash banks */
 void flash_free_all_banks(void);
-
 /**
  * Provides default read implementation for flash memory.
  * @param bank The bank to read.
@@ -198,18 +215,6 @@ void flash_free_all_banks(void);
  */
 int default_flash_read(struct flash_bank *bank,
 		uint8_t *buffer, uint32_t offset, uint32_t count);
-
-/**
- * Provides default verify implementation for flash memory.
- * @param bank The bank to verify.
- * @param buffer The data bytes to verify.
- * @param offset The offset into the chip to verify.
- * @param count The number of bytes to verify.
- * @returns ERROR_OK if successful; otherwise, an error code.
- */
-int default_flash_verify(struct flash_bank *bank,
-		const uint8_t *buffer, uint32_t offset, uint32_t count);
-
 /**
  * Provides default erased-bank check handling. Checks to see if
  * the flash driver knows they are erased; if things look uncertain,
@@ -217,6 +222,7 @@ int default_flash_verify(struct flash_bank *bank,
  * @returns ERROR_OK if successful; otherwise, an error code.
  */
 int default_flash_blank_check(struct flash_bank *bank);
+
 /**
  * Returns the flash bank specified by @a name, which matches the
  * driver name and a suffix (option) specify the driver-specific
@@ -239,15 +245,15 @@ struct flash_bank *get_flash_bank_by_name_noprobe(const char *name);
  * @param bank returned bank if fn returns ERROR_OK
  * @returns ERROR_OK if successful
  */
-int get_flash_bank_by_num(unsigned int num, struct flash_bank **bank);
+int get_flash_bank_by_num(int num, struct flash_bank **bank);
 /**
- * Retrieves @a bank from a command argument, reporting errors parsing
- * the bank identifier or retrieving the specified bank.  The bank
+ * Retreives @a bank from a command argument, reporting errors parsing
+ * the bank identifier or retreiving the specified bank.  The bank
  * may be identified by its bank number or by @c name.instance, where
  * @a instance is driver-specific.
  * @param name_index The index to the string in args containing the
  * bank identifier.
- * @param bank On output, contains a pointer to the bank or NULL.
+ * @param bank On output, contians a pointer to the bank or NULL.
  * @returns ERROR_OK on success, or an error indicating the problem.
  */
 COMMAND_HELPER(flash_command_get_bank, unsigned name_index,
@@ -257,14 +263,13 @@ COMMAND_HELPER(flash_command_get_bank, unsigned name_index,
  * @param num The flash bank number.
  * @returns A struct flash_bank for flash bank @a num, or NULL.
  */
-struct flash_bank *get_flash_bank_by_num_noprobe(unsigned int num);
+struct flash_bank *get_flash_bank_by_num_noprobe(int num);
 /**
  * Returns the flash bank located at a specified address.
  * @param target The target, presumed to contain one or more banks.
  * @param addr An address that is within the range of the bank.
  * @param check return ERROR_OK and result_bank NULL if the bank does not exist
- * @param result_bank The struct flash_bank located at @a addr, or NULL.
- * @returns ERROR_OK on success, or an error indicating the problem.
+ * @returns The struct flash_bank located at @a addr, or NULL.
  */
 int get_flash_bank_by_addr(struct target *target, target_addr_t addr, bool check,
 		struct flash_bank **result_bank);
@@ -275,7 +280,6 @@ int get_flash_bank_by_addr(struct target *target, target_addr_t addr, bool check
  * @param num_blocks Number of blocks in array.
  * @returns A struct flash_sector pointer or NULL when allocation failed.
  */
-struct flash_sector *alloc_block_array(uint32_t offset, uint32_t size,
-		unsigned int num_blocks);
+struct flash_sector *alloc_block_array(uint32_t offset, uint32_t size, int num_blocks);
 
 #endif /* OPENOCD_FLASH_NOR_CORE_H */

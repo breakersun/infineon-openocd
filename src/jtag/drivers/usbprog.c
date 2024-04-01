@@ -1,8 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2007 by Benedikt Sauter                                 *
  *   sauter@ixbat.de                                                       *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 /*
@@ -23,7 +34,7 @@
 
 #include <jtag/interface.h>
 #include <jtag/commands.h>
-#include "libusb_helper.h"
+#include "usb_common.h"
 
 #define VID 0x1781
 #define PID 0x0c63
@@ -53,7 +64,7 @@ static void usbprog_scan(bool ir_scan, enum scan_type type, uint8_t *buffer, int
 #define WRITE_TMS_CHAIN 0x0A
 
 struct usbprog_jtag {
-	struct libusb_device_handle *usb_handle;
+	struct usb_dev_handle *usb_handle;
 };
 
 static struct usbprog_jtag *usbprog_jtag_handle;
@@ -92,49 +103,62 @@ static int usbprog_execute_queue(void)
 
 	while (cmd) {
 		switch (cmd->type) {
-		case JTAG_RESET:
-			LOG_DEBUG_IO("reset trst: %i srst %i",
-					cmd->cmd.reset->trst,
-					cmd->cmd.reset->srst);
-			if (cmd->cmd.reset->trst == 1)
-				tap_set_state(TAP_RESET);
-			usbprog_reset(cmd->cmd.reset->trst, cmd->cmd.reset->srst);
-			break;
-		case JTAG_RUNTEST:
-			LOG_DEBUG_IO("runtest %i cycles, end in %i",
-					cmd->cmd.runtest->num_cycles,
-					cmd->cmd.runtest->end_state);
-			usbprog_end_state(cmd->cmd.runtest->end_state);
-			usbprog_runtest(cmd->cmd.runtest->num_cycles);
-			break;
-		case JTAG_TLR_RESET:
-			LOG_DEBUG_IO("statemove end in %i", cmd->cmd.statemove->end_state);
-			usbprog_end_state(cmd->cmd.statemove->end_state);
-			usbprog_state_move();
-			break;
-		case JTAG_PATHMOVE:
-			LOG_DEBUG_IO("pathmove: %i states, end in %i",
-					cmd->cmd.pathmove->num_states,
-					cmd->cmd.pathmove->path[cmd->cmd.pathmove->num_states - 1]);
-			usbprog_path_move(cmd->cmd.pathmove);
-			break;
-		case JTAG_SCAN:
-			LOG_DEBUG_IO("scan end in %i", cmd->cmd.scan->end_state);
-			usbprog_end_state(cmd->cmd.scan->end_state);
-			scan_size = jtag_build_buffer(cmd->cmd.scan, &buffer);
-			type = jtag_scan_type(cmd->cmd.scan);
-			usbprog_scan(cmd->cmd.scan->ir_scan, type, buffer, scan_size);
-			if (jtag_read_buffer(buffer, cmd->cmd.scan) != ERROR_OK)
-				return ERROR_JTAG_QUEUE_FAILED;
-			free(buffer);
-			break;
-		case JTAG_SLEEP:
-			LOG_DEBUG_IO("sleep %" PRIu32, cmd->cmd.sleep->us);
-			jtag_sleep(cmd->cmd.sleep->us);
-			break;
-		default:
-			LOG_ERROR("BUG: unknown JTAG command type encountered");
-			exit(-1);
+		    case JTAG_RESET:
+#ifdef _DEBUG_JTAG_IO_
+			    LOG_DEBUG("reset trst: %i srst %i",
+				cmd->cmd.reset->trst,
+				cmd->cmd.reset->srst);
+#endif
+			    if (cmd->cmd.reset->trst == 1)
+				    tap_set_state(TAP_RESET);
+			    usbprog_reset(cmd->cmd.reset->trst, cmd->cmd.reset->srst);
+			    break;
+		    case JTAG_RUNTEST:
+#ifdef _DEBUG_JTAG_IO_
+			    LOG_DEBUG("runtest %i cycles, end in %i",
+				cmd->cmd.runtest->num_cycles,
+				cmd->cmd.runtest->end_state);
+#endif
+			    usbprog_end_state(cmd->cmd.runtest->end_state);
+			    usbprog_runtest(cmd->cmd.runtest->num_cycles);
+			    break;
+		    case JTAG_TLR_RESET:
+#ifdef _DEBUG_JTAG_IO_
+			    LOG_DEBUG("statemove end in %i", cmd->cmd.statemove->end_state);
+#endif
+			    usbprog_end_state(cmd->cmd.statemove->end_state);
+			    usbprog_state_move();
+			    break;
+		    case JTAG_PATHMOVE:
+#ifdef _DEBUG_JTAG_IO_
+			    LOG_DEBUG("pathmove: %i states, end in %i",
+				cmd->cmd.pathmove->num_states,
+				cmd->cmd.pathmove->path[cmd->cmd.pathmove->num_states - 1]);
+#endif
+			    usbprog_path_move(cmd->cmd.pathmove);
+			    break;
+		    case JTAG_SCAN:
+#ifdef _DEBUG_JTAG_IO_
+			    LOG_DEBUG("scan end in %i", cmd->cmd.scan->end_state);
+#endif
+			    usbprog_end_state(cmd->cmd.scan->end_state);
+			    scan_size = jtag_build_buffer(cmd->cmd.scan, &buffer);
+			    type = jtag_scan_type(cmd->cmd.scan);
+			    usbprog_scan(cmd->cmd.scan->ir_scan, type, buffer, scan_size);
+			    if (jtag_read_buffer(buffer, cmd->cmd.scan) != ERROR_OK)
+				    return ERROR_JTAG_QUEUE_FAILED;
+			    if (buffer)
+				    free(buffer);
+			    break;
+		    case JTAG_SLEEP:
+#ifdef _DEBUG_JTAG_IO_
+			    LOG_DEBUG("sleep %i", cmd->cmd.sleep->us);
+#endif
+			    jtag_sleep(cmd->cmd.sleep->us);
+			    break;
+		    default:
+			    LOG_ERROR("BUG: unknown JTAG command type encountered");
+			    exit(-1);
 		}
 
 		cmd = cmd->next;
@@ -246,8 +270,10 @@ static void usbprog_runtest(int num_cycles)
 		usbprog_write(0, 0, 0);
 	}
 
-	LOG_DEBUG_IO("runtest: cur_state %s end_state %s", tap_state_name(
+#ifdef _DEBUG_JTAG_IO_
+	LOG_DEBUG("runtest: cur_state %s end_state %s", tap_state_name(
 			tap_get_state()), tap_state_name(tap_get_end_state()));
+#endif
 
 	/* finish in end_state */
 	/*
@@ -335,21 +361,25 @@ static void usbprog_reset(int trst, int srst)
 
 /*************** jtag lowlevel functions ********************/
 
+struct usb_bus *busses;
+
 struct usbprog_jtag *usbprog_jtag_open(void)
 {
+	usb_set_debug(10);
+	usb_init();
+
 	const uint16_t vids[] = { VID, 0 };
 	const uint16_t pids[] = { PID, 0 };
-	struct libusb_device_handle *dev;
-
-	if (jtag_libusb_open(vids, pids, &dev, NULL) != ERROR_OK)
+	struct usb_dev_handle *dev;
+	if (jtag_usb_open(vids, pids, &dev) != ERROR_OK)
 		return NULL;
 
 	struct usbprog_jtag *tmp = malloc(sizeof(struct usbprog_jtag));
 	tmp->usb_handle = dev;
 
-	libusb_set_configuration(dev, 1);
-	libusb_claim_interface(dev, 0);
-	libusb_set_interface_alt_setting(dev, 0, 0);
+	usb_set_configuration(dev, 1);
+	usb_claim_interface(dev, 0);
+	usb_set_altinterface(dev, 0);
 
 	return tmp;
 }
@@ -357,23 +387,21 @@ struct usbprog_jtag *usbprog_jtag_open(void)
 #if 0
 static void usbprog_jtag_close(struct usbprog_jtag *usbprog_jtag)
 {
-	libusb_close(usbprog_jtag->usb_handle);
+	usb_close(usbprog_jtag->usb_handle);
 	free(usbprog_jtag);
 }
 #endif
 
 static unsigned char usbprog_jtag_message(struct usbprog_jtag *usbprog_jtag, char *msg, int msglen)
 {
-	int transferred;
-
-	int res = jtag_libusb_bulk_write(usbprog_jtag->usb_handle, 3, msg, msglen, 100, &transferred);
-	if ((msg[0] == 2) || (msg[0] == 1) || (msg[0] == 4) || (msg[0] == 0) ||
+	int res = usb_bulk_write(usbprog_jtag->usb_handle, 3, msg, msglen, 100);
+	if ((msg[0] == 2) || (msg[0] == 1) || (msg[0] == 4) || (msg[0] == 0) ||	\
 	    (msg[0] == 6) || (msg[0] == 0x0A) || (msg[0] == 9))
 		return 1;
-	if (res == ERROR_OK && transferred == msglen) {
+	if (res == msglen) {
 		/* LOG_INFO("HALLLLOOO %i",(int)msg[0]); */
-		res = jtag_libusb_bulk_read(usbprog_jtag->usb_handle, 0x82, msg, 2, 100, &transferred);
-		if (res == ERROR_OK && transferred > 0)
+		res = usb_bulk_read(usbprog_jtag->usb_handle, 0x82, msg, 2, 100);
+		if (res > 0)
 			return (unsigned char)msg[1];
 		else
 			return -1;
@@ -389,11 +417,11 @@ static void usbprog_jtag_init(struct usbprog_jtag *usbprog_jtag)
 
 static void usbprog_jtag_write_and_read(struct usbprog_jtag *usbprog_jtag, char *buffer, int size)
 {
-	char tmp[64];	/* fastest packet size for usb controller */
+	char tmp[64];	/* fastes packet size for usb controller */
 	int send_bits, bufindex = 0, fillindex = 0, i, loops;
 
 	char swap;
-	/* 61 byte can be transferred (488 bit) */
+	/* 61 byte can be transfered (488 bit) */
 
 	while (size > 0) {
 		if (size > 488) {
@@ -415,13 +443,11 @@ static void usbprog_jtag_write_and_read(struct usbprog_jtag *usbprog_jtag, char 
 			bufindex++;
 		}
 
-		int transferred;
-		int res = jtag_libusb_bulk_write(usbprog_jtag->usb_handle, 3, tmp, 64, 1000, &transferred);
-		if (res == ERROR_OK && transferred == 64) {
+		if (usb_bulk_write(usbprog_jtag->usb_handle, 3, tmp, 64, 1000) == 64) {
 			/* LOG_INFO("HALLLLOOO2 %i",(int)tmp[0]); */
 			usleep(1);
 			int timeout = 0;
-			while (jtag_libusb_bulk_read(usbprog_jtag->usb_handle, 0x82, tmp, 64, 1000, &transferred) != ERROR_OK) {
+			while (usb_bulk_read(usbprog_jtag->usb_handle, 0x82, tmp, 64, 1000) < 1) {
 				timeout++;
 				if (timeout > 10)
 					break;
@@ -437,11 +463,11 @@ static void usbprog_jtag_write_and_read(struct usbprog_jtag *usbprog_jtag, char 
 
 static void usbprog_jtag_read_tdo(struct usbprog_jtag *usbprog_jtag, char *buffer, int size)
 {
-	char tmp[64];	/* fastest packet size for usb controller */
+	char tmp[64];	/* fastes packet size for usb controller */
 	int send_bits, fillindex = 0, i, loops;
 
 	char swap;
-	/* 61 byte can be transferred (488 bit) */
+	/* 61 byte can be transfered (488 bit) */
 
 	while (size > 0) {
 		if (size > 488) {
@@ -458,13 +484,12 @@ static void usbprog_jtag_read_tdo(struct usbprog_jtag *usbprog_jtag, char *buffe
 		tmp[1] = (char)(send_bits >> 8);	/* high */
 		tmp[2] = (char)(send_bits);			/* low */
 
-		int transferred;
-		jtag_libusb_bulk_write(usbprog_jtag->usb_handle, 3, tmp, 3, 1000, &transferred);
+		usb_bulk_write(usbprog_jtag->usb_handle, 3, tmp, 3, 1000);
 
 		/* LOG_INFO("HALLLLOOO3 %i",(int)tmp[0]); */
 		int timeout = 0;
 		usleep(1);
-		while (jtag_libusb_bulk_read(usbprog_jtag->usb_handle, 0x82, tmp, 64, 10, &transferred) != ERROR_OK) {
+		while (usb_bulk_read(usbprog_jtag->usb_handle, 0x82, tmp, 64, 10) < 1) {
 			timeout++;
 			if (timeout > 10)
 				break;
@@ -479,10 +504,10 @@ static void usbprog_jtag_read_tdo(struct usbprog_jtag *usbprog_jtag, char *buffe
 
 static void usbprog_jtag_write_tdi(struct usbprog_jtag *usbprog_jtag, char *buffer, int size)
 {
-	char tmp[64];	/* fastest packet size for usb controller */
+	char tmp[64];	/* fastes packet size for usb controller */
 	int send_bits, bufindex = 0, i, loops;
 
-	/* 61 byte can be transferred (488 bit) */
+	/* 61 byte can be transfered (488 bit) */
 	while (size > 0) {
 		if (size > 488) {
 			send_bits = 488;
@@ -503,8 +528,7 @@ static void usbprog_jtag_write_tdi(struct usbprog_jtag *usbprog_jtag, char *buff
 			tmp[3 + i] = buffer[bufindex];
 			bufindex++;
 		}
-		int transferred;
-		jtag_libusb_bulk_write(usbprog_jtag->usb_handle, 3, tmp, 64, 1000, &transferred);
+		usb_bulk_write(usbprog_jtag->usb_handle, 3, tmp, 64, 1000);
 	}
 }
 
@@ -573,29 +597,23 @@ static void usbprog_jtag_tms_collect(char tms_scan)
 
 static void usbprog_jtag_tms_send(struct usbprog_jtag *usbprog_jtag)
 {
+	int i;
 	/* LOG_INFO("TMS SEND"); */
 	if (tms_chain_index > 0) {
 		char tmp[tms_chain_index + 2];
 		tmp[0] = WRITE_TMS_CHAIN;
 		tmp[1] = (char)(tms_chain_index);
-		for (int i = 0; i < tms_chain_index + 1; i++)
+		for (i = 0; i < tms_chain_index + 1; i++)
 			tmp[2 + i] = tms_chain[i];
-		int transferred;
-		jtag_libusb_bulk_write(usbprog_jtag->usb_handle, 3, tmp, tms_chain_index + 2, 1000, &transferred);
+		usb_bulk_write(usbprog_jtag->usb_handle, 3, tmp, tms_chain_index + 2, 1000);
 		tms_chain_index = 0;
 	}
 }
 
-static struct jtag_interface usbprog_interface = {
-	.execute_queue = usbprog_execute_queue,
-};
-
-struct adapter_driver usbprog_adapter_driver = {
+struct jtag_interface usbprog_interface = {
 	.name = "usbprog",
-	.transports = jtag_only,
 
+	.execute_queue = usbprog_execute_queue,
 	.init = usbprog_init,
-	.quit = usbprog_quit,
-
-	.jtag_ops = &usbprog_interface,
+	.quit = usbprog_quit
 };

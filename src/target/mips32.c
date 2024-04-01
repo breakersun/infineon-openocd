@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2008 by Spencer Oliver                                  *
  *   spen@spen-soft.co.uk                                                  *
@@ -11,6 +9,19 @@
  *                                                                         *
  *   Copyright (C) 2011 by Drasko DRASKOVIC                                *
  *   drasko.draskovic@gmail.com                                            *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -215,7 +226,7 @@ static int mips32_write_core_reg(struct target *target, unsigned int num)
 
 	reg_value = buf_get_u32(mips32->core_cache->reg_list[num].value, 0, 32);
 	mips32->core_regs[num] = reg_value;
-	LOG_DEBUG("write core reg %i value 0x%" PRIx32 "", num, reg_value);
+	LOG_DEBUG("write core reg %i value 0x%" PRIx32 "", num , reg_value);
 	mips32->core_cache->reg_list[num].valid = true;
 	mips32->core_cache->reg_list[num].dirty = false;
 
@@ -462,7 +473,7 @@ int mips32_run_algorithm(struct target *target, int num_mem_params,
 		if (reg_params[i].direction == PARAM_IN)
 			continue;
 
-		struct reg *reg = register_get_by_name(mips32->core_cache, reg_params[i].reg_name, false);
+		struct reg *reg = register_get_by_name(mips32->core_cache, reg_params[i].reg_name, 0);
 
 		if (!reg) {
 			LOG_ERROR("BUG: register '%s' not found", reg_params[i].reg_name);
@@ -496,7 +507,7 @@ int mips32_run_algorithm(struct target *target, int num_mem_params,
 
 	for (int i = 0; i < num_reg_params; i++) {
 		if (reg_params[i].direction != PARAM_OUT) {
-			struct reg *reg = register_get_by_name(mips32->core_cache, reg_params[i].reg_name, false);
+			struct reg *reg = register_get_by_name(mips32->core_cache, reg_params[i].reg_name, 0);
 			if (!reg) {
 				LOG_ERROR("BUG: register '%s' not found", reg_params[i].reg_name);
 				return ERROR_COMMAND_SYNTAX_ERROR;
@@ -712,9 +723,9 @@ int mips32_read_config_regs(struct target *target)
 				break;	/* no more config registers implemented */
 		}
 	else
-		return ERROR_OK;	/* already successfully read */
+		return ERROR_OK;	/* already succesfully read */
 
-	LOG_DEBUG("read  %"PRIu32" config registers", ejtag_info->config_regs);
+	LOG_DEBUG("read  %"PRId32" config registers", ejtag_info->config_regs);
 
 	if (ejtag_info->impcode & EJTAG_IMP_MIPS16) {
 		mips32->isa_imp = MIPS32_MIPS16;
@@ -894,11 +905,11 @@ cleanup:
 	return 1;       /* only one block has been checked */
 }
 
-static int mips32_verify_pointer(struct command_invocation *cmd,
+static int mips32_verify_pointer(struct command_context *cmd_ctx,
 		struct mips32_common *mips32)
 {
 	if (mips32->common_magic != MIPS32_COMMON_MAGIC) {
-		command_print(cmd, "target is not an MIPS32");
+		command_print(cmd_ctx, "target is not an MIPS32");
 		return ERROR_TARGET_INVALID;
 	}
 	return ERROR_OK;
@@ -916,12 +927,12 @@ COMMAND_HANDLER(mips32_handle_cp0_command)
 	struct mips_ejtag *ejtag_info = &mips32->ejtag_info;
 
 
-	retval = mips32_verify_pointer(CMD, mips32);
+	retval = mips32_verify_pointer(CMD_CTX, mips32);
 	if (retval != ERROR_OK)
 		return retval;
 
 	if (target->state != TARGET_HALTED) {
-		command_print(CMD, "target must be stopped for \"%s\" command", CMD_NAME);
+		command_print(CMD_CTX, "target must be stopped for \"%s\" command", CMD_NAME);
 		return ERROR_OK;
 	}
 
@@ -938,12 +949,12 @@ COMMAND_HANDLER(mips32_handle_cp0_command)
 
 			retval = mips32_cp0_read(ejtag_info, &value, cp0_reg, cp0_sel);
 			if (retval != ERROR_OK) {
-				command_print(CMD,
-						"couldn't access reg %" PRIu32,
+				command_print(CMD_CTX,
+						"couldn't access reg %" PRIi32,
 						cp0_reg);
 				return ERROR_OK;
 			}
-			command_print(CMD, "cp0 reg %" PRIu32 ", select %" PRIu32 ": %8.8" PRIx32,
+			command_print(CMD_CTX, "cp0 reg %" PRIi32 ", select %" PRIi32 ": %8.8" PRIx32,
 					cp0_reg, cp0_sel, value);
 
 		} else if (CMD_ARGC == 3) {
@@ -951,12 +962,12 @@ COMMAND_HANDLER(mips32_handle_cp0_command)
 			COMMAND_PARSE_NUMBER(u32, CMD_ARGV[2], value);
 			retval = mips32_cp0_write(ejtag_info, value, cp0_reg, cp0_sel);
 			if (retval != ERROR_OK) {
-				command_print(CMD,
-						"couldn't access cp0 reg %" PRIu32 ", select %" PRIu32,
+				command_print(CMD_CTX,
+						"couldn't access cp0 reg %" PRIi32 ", select %" PRIi32,
 						cp0_reg,  cp0_sel);
 				return ERROR_OK;
 			}
-			command_print(CMD, "cp0 reg %" PRIu32 ", select %" PRIu32 ": %8.8" PRIx32,
+			command_print(CMD_CTX, "cp0 reg %" PRIi32 ", select %" PRIi32 ": %8.8" PRIx32,
 					cp0_reg, cp0_sel, value);
 		}
 	}
@@ -975,13 +986,13 @@ COMMAND_HANDLER(mips32_handle_scan_delay_command)
 	else if (CMD_ARGC > 1)
 			return ERROR_COMMAND_SYNTAX_ERROR;
 
-	command_print(CMD, "scan delay: %d nsec", ejtag_info->scan_delay);
+	command_print(CMD_CTX, "scan delay: %d nsec", ejtag_info->scan_delay);
 	if (ejtag_info->scan_delay >= MIPS32_SCAN_DELAY_LEGACY_MODE) {
 		ejtag_info->mode = 0;
-		command_print(CMD, "running in legacy mode");
+		command_print(CMD_CTX, "running in legacy mode");
 	} else {
 		ejtag_info->mode = 1;
-		command_print(CMD, "running in fast queued mode");
+		command_print(CMD_CTX, "running in fast queued mode");
 	}
 
 	return ERROR_OK;

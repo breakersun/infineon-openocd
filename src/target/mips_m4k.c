@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2008 by Spencer Oliver                                  *
  *   spen@spen-soft.co.uk                                                  *
@@ -10,6 +8,19 @@
  *                                                                         *
  *   Copyright (C) 2011 by Drasko DRASKOVIC                                *
  *   drasko.draskovic@gmail.com                                            *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -117,11 +128,14 @@ static int mips_m4k_debug_entry(struct target *target)
 static struct target *get_mips_m4k(struct target *target, int32_t coreid)
 {
 	struct target_list *head;
+	struct target *curr;
 
-	foreach_smp_target(head, target->smp_targets) {
-		struct target *curr = head->target;
+	head = target->head;
+	while (head != (struct target_list *)NULL) {
+		curr = head->target;
 		if ((curr->coreid == coreid) && (curr->state == TARGET_HALTED))
 			return curr;
+		head = head->next;
 	}
 	return target;
 }
@@ -130,10 +144,11 @@ static int mips_m4k_halt_smp(struct target *target)
 {
 	int retval = ERROR_OK;
 	struct target_list *head;
-
-	foreach_smp_target(head, target->smp_targets) {
+	struct target *curr;
+	head = target->head;
+	while (head != (struct target_list *)NULL) {
 		int ret = ERROR_OK;
-		struct target *curr = head->target;
+		curr = head->target;
 		if ((curr != target) && (curr->state != TARGET_HALTED))
 			ret = mips_m4k_halt(curr);
 
@@ -141,6 +156,7 @@ static int mips_m4k_halt_smp(struct target *target)
 			LOG_ERROR("halt failed target->coreid: %" PRId32, curr->coreid);
 			retval = ret;
 		}
+		head = head->next;
 	}
 	return retval;
 }
@@ -170,7 +186,7 @@ static int mips_m4k_poll(struct target *target)
 	/*  the next polling trigger an halt event sent to gdb */
 	if ((target->state == TARGET_HALTED) && (target->smp) &&
 		(target->gdb_service) &&
-		(!target->gdb_service->target)) {
+		(target->gdb_service->target == NULL)) {
 		target->gdb_service->target =
 			get_mips_m4k(target, target->gdb_service->core[1]);
 		target_call_event_callbacks(target, TARGET_EVENT_HALTED);
@@ -398,10 +414,12 @@ static int mips_m4k_restore_smp(struct target *target, uint32_t address, int han
 {
 	int retval = ERROR_OK;
 	struct target_list *head;
+	struct target *curr;
 
-	foreach_smp_target(head, target->smp_targets) {
+	head = target->head;
+	while (head != (struct target_list *)NULL) {
 		int ret = ERROR_OK;
-		struct target *curr = head->target;
+		curr = head->target;
 		if ((curr != target) && (curr->state != TARGET_RUNNING)) {
 			/*  resume current address , not in step mode */
 			ret = mips_m4k_internal_restore(curr, 1, address,
@@ -413,6 +431,7 @@ static int mips_m4k_restore_smp(struct target *target, uint32_t address, int han
 				retval = ret;
 			}
 		}
+		head = head->next;
 	}
 	return retval;
 }
@@ -582,7 +601,7 @@ static void mips_m4k_enable_breakpoints(struct target *target)
 
 	/* set any pending breakpoints */
 	while (breakpoint) {
-		if (!breakpoint->is_set)
+		if (breakpoint->set == 0)
 			mips_m4k_set_breakpoint(target, breakpoint);
 		breakpoint = breakpoint->next;
 	}
@@ -596,7 +615,7 @@ static int mips_m4k_set_breakpoint(struct target *target,
 	struct mips32_comparator *comparator_list = mips32->inst_break_list;
 	int retval;
 
-	if (breakpoint->is_set) {
+	if (breakpoint->set) {
 		LOG_WARNING("breakpoint already set");
 		return ERROR_OK;
 	}
@@ -611,7 +630,7 @@ static int mips_m4k_set_breakpoint(struct target *target,
 					breakpoint->unique_id);
 			return ERROR_TARGET_RESOURCE_NOT_AVAILABLE;
 		}
-		breakpoint_hw_set(breakpoint, bp_num);
+		breakpoint->set = bp_num + 1;
 		comparator_list[bp_num].used = 1;
 		comparator_list[bp_num].bp_value = breakpoint->address;
 
@@ -648,7 +667,7 @@ static int mips_m4k_set_breakpoint(struct target *target,
 			if (ejtag_info->endianness && isa_req)
 				sdbbp32_instr = SWAP16(sdbbp32_instr);
 
-			if ((breakpoint->address & 3) == 0) {	/* word aligned */
+			if ((breakpoint->address & 3) == 0) {	/* word alligned */
 
 				retval = target_read_memory(target, bpaddr, bplength, 1, breakpoint->orig_instr);
 				if (retval != ERROR_OK)
@@ -713,7 +732,7 @@ static int mips_m4k_set_breakpoint(struct target *target,
 			}
 		}
 
-		breakpoint->is_set = true;
+		breakpoint->set = 20; /* Any nice value but 0 */
 	}
 
 	return ERROR_OK;
@@ -728,14 +747,14 @@ static int mips_m4k_unset_breakpoint(struct target *target,
 	struct mips32_comparator *comparator_list = mips32->inst_break_list;
 	int retval;
 
-	if (!breakpoint->is_set) {
+	if (!breakpoint->set) {
 		LOG_WARNING("breakpoint not set");
 		return ERROR_OK;
 	}
 
 	if (breakpoint->type == BKPT_HARD) {
-		int bp_num = breakpoint->number;
-		if (bp_num >= mips32->num_inst_bpoints) {
+		int bp_num = breakpoint->set - 1;
+		if ((bp_num < 0) || (bp_num >= mips32->num_inst_bpoints)) {
 			LOG_DEBUG("Invalid FP Comparator number in breakpoint (bpid: %" PRIu32 ")",
 					  breakpoint->unique_id);
 			return ERROR_OK;
@@ -765,9 +784,9 @@ static int mips_m4k_unset_breakpoint(struct target *target,
 				if (retval != ERROR_OK)
 					return retval;
 				/**
-				* target_read_memory() gets us data in _target_ endianness.
+				* target_read_memory() gets us data in _target_ endianess.
 				* If we want to use this data on the host for comparisons with some macros
-				* we must first transform it to _host_ endianness using target_buffer_get_u16().
+				* we must first transform it to _host_ endianess using target_buffer_get_u16().
 				*/
 				if (sdbbp32_instr == target_buffer_get_u32(target, current_instr)) {
 					retval = target_write_memory(target, breakpoint->address, 4, 1,
@@ -775,7 +794,7 @@ static int mips_m4k_unset_breakpoint(struct target *target,
 					if (retval != ERROR_OK)
 						return retval;
 				}
-			} else {	/* 16bit aligned */
+			} else {	/* 16bit alligned */
 				retval = target_read_memory(target, breakpoint->address, 2, 2, current_instr);
 				if (retval != ERROR_OK)
 					return retval;
@@ -802,7 +821,7 @@ static int mips_m4k_unset_breakpoint(struct target *target,
 		}
 	}
 
-	breakpoint->is_set = false;
+	breakpoint->set = 0;
 
 	return ERROR_OK;
 }
@@ -840,7 +859,7 @@ static int mips_m4k_remove_breakpoint(struct target *target,
 		return ERROR_TARGET_NOT_HALTED;
 	}
 
-	if (breakpoint->is_set)
+	if (breakpoint->set)
 		mips_m4k_unset_breakpoint(target, breakpoint);
 
 	if (breakpoint->type == BKPT_HARD)
@@ -861,10 +880,10 @@ static int mips_m4k_set_watchpoint(struct target *target,
 	 * and exclude both load and store accesses from  watchpoint
 	 * condition evaluation
 	*/
-	int enable = EJTAG_DBCN_NOSB | EJTAG_DBCN_NOLB | EJTAG_DBCN_BE |
-			(0xff << EJTAG_DBCN_BLM_SHIFT);
+	int enable = EJTAG_DBCn_NOSB | EJTAG_DBCn_NOLB | EJTAG_DBCn_BE |
+			(0xff << EJTAG_DBCn_BLM_SHIFT);
 
-	if (watchpoint->is_set) {
+	if (watchpoint->set) {
 		LOG_WARNING("watchpoint already set");
 		return ERROR_OK;
 	}
@@ -888,19 +907,19 @@ static int mips_m4k_set_watchpoint(struct target *target,
 
 	switch (watchpoint->rw) {
 		case WPT_READ:
-			enable &= ~EJTAG_DBCN_NOLB;
+			enable &= ~EJTAG_DBCn_NOLB;
 			break;
 		case WPT_WRITE:
-			enable &= ~EJTAG_DBCN_NOSB;
+			enable &= ~EJTAG_DBCn_NOSB;
 			break;
 		case WPT_ACCESS:
-			enable &= ~(EJTAG_DBCN_NOLB | EJTAG_DBCN_NOSB);
+			enable &= ~(EJTAG_DBCn_NOLB | EJTAG_DBCn_NOSB);
 			break;
 		default:
 			LOG_ERROR("BUG: watchpoint->rw neither read, write nor access");
 	}
 
-	watchpoint_set(watchpoint, wp_num);
+	watchpoint->set = wp_num + 1;
 	comparator_list[wp_num].used = 1;
 	comparator_list[wp_num].bp_value = watchpoint->address;
 
@@ -935,13 +954,13 @@ static int mips_m4k_unset_watchpoint(struct target *target,
 	struct mips_ejtag *ejtag_info = &mips32->ejtag_info;
 	struct mips32_comparator *comparator_list = mips32->data_break_list;
 
-	if (!watchpoint->is_set) {
+	if (!watchpoint->set) {
 		LOG_WARNING("watchpoint not set");
 		return ERROR_OK;
 	}
 
-	int wp_num = watchpoint->number;
-	if (wp_num >= mips32->num_data_bpoints) {
+	int wp_num = watchpoint->set - 1;
+	if ((wp_num < 0) || (wp_num >= mips32->num_data_bpoints)) {
 		LOG_DEBUG("Invalid FP Comparator number in watchpoint");
 		return ERROR_OK;
 	}
@@ -949,7 +968,7 @@ static int mips_m4k_unset_watchpoint(struct target *target,
 	comparator_list[wp_num].bp_value = 0;
 	target_write_u32(target, comparator_list[wp_num].reg_address +
 			 ejtag_info->ejtag_dbc_offs, 0);
-	watchpoint->is_set = false;
+	watchpoint->set = 0;
 
 	return ERROR_OK;
 }
@@ -980,7 +999,7 @@ static int mips_m4k_remove_watchpoint(struct target *target,
 		return ERROR_TARGET_NOT_HALTED;
 	}
 
-	if (watchpoint->is_set)
+	if (watchpoint->set)
 		mips_m4k_unset_watchpoint(target, watchpoint);
 
 	mips32->num_data_bpoints_avail++;
@@ -994,7 +1013,7 @@ static void mips_m4k_enable_watchpoints(struct target *target)
 
 	/* set any pending watchpoints */
 	while (watchpoint) {
-		if (!watchpoint->is_set)
+		if (watchpoint->set == 0)
 			mips_m4k_set_watchpoint(target, watchpoint);
 		watchpoint = watchpoint->next;
 	}
@@ -1026,7 +1045,7 @@ static int mips_m4k_read_memory(struct target *target, target_addr_t address,
 
 	if (size > 1) {
 		t = malloc(count * size * sizeof(uint8_t));
-		if (!t) {
+		if (t == NULL) {
 			LOG_ERROR("Out of memory");
 			return ERROR_FAIL;
 		}
@@ -1042,7 +1061,7 @@ static int mips_m4k_read_memory(struct target *target, target_addr_t address,
 
 	/* mips32_..._read_mem with size 4/2 returns uint32_t/uint16_t in host */
 	/* endianness, but byte array should represent target endianness       */
-	if (retval == ERROR_OK) {
+	if (ERROR_OK == retval) {
 		switch (size) {
 		case 4:
 			target_buffer_set_u32_array(target, buffer, count, t);
@@ -1053,7 +1072,7 @@ static int mips_m4k_read_memory(struct target *target, target_addr_t address,
 		}
 	}
 
-	if (size > 1)
+	if ((size > 1) && (t != NULL))
 		free(t);
 
 	return retval;
@@ -1087,13 +1106,13 @@ static int mips_m4k_write_memory(struct target *target, target_addr_t address,
 	if (((size == 4) && (address & 0x3u)) || ((size == 2) && (address & 0x1u)))
 		return ERROR_TARGET_UNALIGNED_ACCESS;
 
-	/** correct endianness if we have word or hword access */
+	/** correct endianess if we have word or hword access */
 	void *t = NULL;
 	if (size > 1) {
 		/* mips32_..._write_mem with size 4/2 requires uint32_t/uint16_t in host */
 		/* endianness, but byte array represents target endianness               */
 		t = malloc(count * size * sizeof(uint8_t));
-		if (!t) {
+		if (t == NULL) {
 			LOG_ERROR("Out of memory");
 			return ERROR_FAIL;
 		}
@@ -1116,9 +1135,10 @@ static int mips_m4k_write_memory(struct target *target, target_addr_t address,
 	else
 		retval = mips32_dmaacc_write_mem(ejtag_info, address, size, count, buffer);
 
-	free(t);
+	if (t != NULL)
+		free(t);
 
-	if (retval != ERROR_OK)
+	if (ERROR_OK != retval)
 		return retval;
 
 	return ERROR_OK;
@@ -1199,7 +1219,7 @@ static int mips_m4k_bulk_write_memory(struct target *target, target_addr_t addre
 	if (address & 0x3u)
 		return ERROR_TARGET_UNALIGNED_ACCESS;
 
-	if (!mips32->fast_data_area) {
+	if (mips32->fast_data_area == NULL) {
 		/* Get memory for block write handler
 		 * we preserve this area between calls and gain a speed increase
 		 * of about 3kb/sec when writing flash
@@ -1231,7 +1251,7 @@ static int mips_m4k_bulk_write_memory(struct target *target, target_addr_t addre
 	/* but byte array represents target endianness                      */
 	uint32_t *t = NULL;
 	t = malloc(count * sizeof(uint32_t));
-	if (!t) {
+	if (t == NULL) {
 		LOG_ERROR("Out of memory");
 		return ERROR_FAIL;
 	}
@@ -1241,7 +1261,8 @@ static int mips_m4k_bulk_write_memory(struct target *target, target_addr_t addre
 	retval = mips32_pracc_fastdata_xfer(ejtag_info, mips32->fast_data_area, write_t, address,
 			count, t);
 
-	free(t);
+	if (t != NULL)
+		free(t);
 
 	if (retval != ERROR_OK)
 		LOG_ERROR("Fastdata access Failed");
@@ -1249,11 +1270,11 @@ static int mips_m4k_bulk_write_memory(struct target *target, target_addr_t addre
 	return retval;
 }
 
-static int mips_m4k_verify_pointer(struct command_invocation *cmd,
+static int mips_m4k_verify_pointer(struct command_context *cmd_ctx,
 		struct mips_m4k_common *mips_m4k)
 {
 	if (mips_m4k->common_magic != MIPSM4K_COMMON_MAGIC) {
-		command_print(cmd, "target is not an MIPS_M4K");
+		command_print(cmd_ctx, "target is not an MIPS_M4K");
 		return ERROR_TARGET_INVALID;
 	}
 	return ERROR_OK;
@@ -1266,12 +1287,12 @@ COMMAND_HANDLER(mips_m4k_handle_cp0_command)
 	struct mips_m4k_common *mips_m4k = target_to_m4k(target);
 	struct mips_ejtag *ejtag_info = &mips_m4k->mips32.ejtag_info;
 
-	retval = mips_m4k_verify_pointer(CMD, mips_m4k);
+	retval = mips_m4k_verify_pointer(CMD_CTX, mips_m4k);
 	if (retval != ERROR_OK)
 		return retval;
 
 	if (target->state != TARGET_HALTED) {
-		command_print(CMD, "target must be stopped for \"%s\" command", CMD_NAME);
+		command_print(CMD_CTX, "target must be stopped for \"%s\" command", CMD_NAME);
 		return ERROR_OK;
 	}
 
@@ -1287,12 +1308,12 @@ COMMAND_HANDLER(mips_m4k_handle_cp0_command)
 			uint32_t value;
 			retval = mips32_cp0_read(ejtag_info, &value, cp0_reg, cp0_sel);
 			if (retval != ERROR_OK) {
-				command_print(CMD,
-						"couldn't access reg %" PRIu32,
+				command_print(CMD_CTX,
+						"couldn't access reg %" PRIi32,
 						cp0_reg);
 				return ERROR_OK;
 			}
-			command_print(CMD, "cp0 reg %" PRIu32 ", select %" PRIu32 ": %8.8" PRIx32,
+			command_print(CMD_CTX, "cp0 reg %" PRIi32 ", select %" PRIi32 ": %8.8" PRIx32,
 					cp0_reg, cp0_sel, value);
 
 		} else if (CMD_ARGC == 3) {
@@ -1300,12 +1321,12 @@ COMMAND_HANDLER(mips_m4k_handle_cp0_command)
 			COMMAND_PARSE_NUMBER(u32, CMD_ARGV[2], value);
 			retval = mips32_cp0_write(ejtag_info, value, cp0_reg, cp0_sel);
 			if (retval != ERROR_OK) {
-				command_print(CMD,
-						"couldn't access cp0 reg %" PRIu32 ", select %" PRIu32,
+				command_print(CMD_CTX,
+						"couldn't access cp0 reg %" PRIi32 ", select %" PRIi32,
 						cp0_reg,  cp0_sel);
 				return ERROR_OK;
 			}
-			command_print(CMD, "cp0 reg %" PRIu32 ", select %" PRIu32 ": %8.8" PRIx32,
+			command_print(CMD_CTX, "cp0 reg %" PRIi32 ", select %" PRIi32 ": %8.8" PRIx32,
 					cp0_reg, cp0_sel, value);
 		}
 	}
@@ -1324,13 +1345,13 @@ COMMAND_HANDLER(mips_m4k_handle_scan_delay_command)
 	else if (CMD_ARGC > 1)
 			return ERROR_COMMAND_SYNTAX_ERROR;
 
-	command_print(CMD, "scan delay: %d nsec", ejtag_info->scan_delay);
+	command_print(CMD_CTX, "scan delay: %d nsec", ejtag_info->scan_delay);
 	if (ejtag_info->scan_delay >= MIPS32_SCAN_DELAY_LEGACY_MODE) {
 		ejtag_info->mode = 0;
-		command_print(CMD, "running in legacy mode");
+		command_print(CMD_CTX, "running in legacy mode");
 	} else {
 		ejtag_info->mode = 1;
-		command_print(CMD, "running in fast queued mode");
+		command_print(CMD_CTX, "running in fast queued mode");
 	}
 
 	return ERROR_OK;
@@ -1357,7 +1378,7 @@ static const struct command_registration mips_m4k_exec_command_handlers[] = {
 	COMMAND_REGISTRATION_DONE
 };
 
-static const struct command_registration mips_m4k_command_handlers[] = {
+const struct command_registration mips_m4k_command_handlers[] = {
 	{
 		.chain = mips32_command_handlers,
 	},

@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2005 by Dominic Rath                                    *
  *   Dominic.Rath@gmx.de                                                   *
@@ -9,6 +7,19 @@
  *
  *   Copyright (C) 2008 by Oyvind Harboe                                   *
  *   oyvind.harboe@zylin.com                                               *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -57,7 +68,7 @@ static int str9x_build_block_list(struct flash_bank *bank)
 	struct str9x_flash_bank *str9x_info = bank->driver_priv;
 
 	int i;
-	unsigned int num_sectors;
+	int num_sectors;
 	int b0_sectors = 0, b1_sectors = 0;
 	uint32_t offset = 0;
 
@@ -153,6 +164,7 @@ static int str9x_protect_check(struct flash_bank *bank)
 	struct str9x_flash_bank *str9x_info = bank->driver_priv;
 	struct target *target = bank->target;
 
+	int i;
 	uint32_t adr;
 	uint32_t status = 0;
 	uint16_t hstatus = 0;
@@ -199,7 +211,7 @@ static int str9x_protect_check(struct flash_bank *bank)
 	if (retval != ERROR_OK)
 		return retval;
 
-	for (unsigned int i = 0; i < bank->num_sectors; i++) {
+	for (i = 0; i < bank->num_sectors; i++) {
 		if (status & str9x_info->sector_bits[i])
 			bank->sectors[i].is_protected = 1;
 		else
@@ -209,10 +221,10 @@ static int str9x_protect_check(struct flash_bank *bank)
 	return ERROR_OK;
 }
 
-static int str9x_erase(struct flash_bank *bank, unsigned int first,
-		unsigned int last)
+static int str9x_erase(struct flash_bank *bank, int first, int last)
 {
 	struct target *target = bank->target;
+	int i;
 	uint32_t adr;
 	uint8_t status;
 	uint8_t erase_cmd;
@@ -238,7 +250,7 @@ static int str9x_erase(struct flash_bank *bank, unsigned int first,
 	/* this is so the compiler can *know* */
 	assert(total_timeout > 0);
 
-	for (unsigned int i = first; i <= last; i++) {
+	for (i = first; i <= last; i++) {
 		int retval;
 		adr = bank->base + bank->sectors[i].offset;
 
@@ -289,13 +301,17 @@ static int str9x_erase(struct flash_bank *bank, unsigned int first,
 			break;
 	}
 
+	for (i = first; i <= last; i++)
+		bank->sectors[i].is_erased = 1;
+
 	return ERROR_OK;
 }
 
-static int str9x_protect(struct flash_bank *bank, int set, unsigned int first,
-		unsigned int last)
+static int str9x_protect(struct flash_bank *bank,
+		int set, int first, int last)
 {
 	struct target *target = bank->target;
+	int i;
 	uint32_t adr;
 	uint8_t status;
 
@@ -304,7 +320,7 @@ static int str9x_protect(struct flash_bank *bank, int set, unsigned int first,
 		return ERROR_TARGET_NOT_HALTED;
 	}
 
-	for (unsigned int i = first; i <= last; i++) {
+	for (i = first; i <= last; i++) {
 		/* Level One Protection */
 
 		adr = bank->base + bank->sectors[i].offset;
@@ -340,7 +356,7 @@ static int str9x_write_block(struct flash_bank *bank,
 	struct arm_algorithm arm_algo;
 	int retval = ERROR_OK;
 
-	/* see contrib/loaders/flash/str9x.s for src */
+	/* see contib/loaders/flash/str9x.s for src */
 
 	static const uint32_t str9x_flash_write_code[] = {
 					/* write:				*/
@@ -452,6 +468,7 @@ static int str9x_write(struct flash_bank *bank,
 	int retval;
 	uint32_t check_address = offset;
 	uint32_t bank_adr;
+	int i;
 
 	if (bank->target->state != TARGET_HALTED) {
 		LOG_ERROR("Target not halted");
@@ -463,7 +480,7 @@ static int str9x_write(struct flash_bank *bank,
 		return ERROR_FLASH_DST_BREAKS_ALIGNMENT;
 	}
 
-	for (unsigned int i = 0; i < bank->num_sectors; i++) {
+	for (i = 0; i < bank->num_sectors; i++) {
 		uint32_t sec_start = bank->sectors[i].offset;
 		uint32_t sec_end = sec_start + bank->sectors[i].size;
 
@@ -597,7 +614,7 @@ COMMAND_HANDLER(str9x_handle_flash_config_command)
 
 	struct flash_bank *bank;
 	int retval = CALL_COMMAND_HANDLER(flash_command_get_bank, 0, &bank);
-	if (retval != ERROR_OK)
+	if (ERROR_OK != retval)
 		return retval;
 
 	uint32_t bbsr, nbbsr, bbadr, nbbadr;

@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: BSD-2-Clause-Views
-
 /* Jim - A small embeddable Tcl interpreter
  *
  * Copyright 2005 Salvatore Sanfilippo <antirez@invece.org>
@@ -13,69 +11,92 @@
  * Copyright 2009 Nico Coesel <ncoesel@dealogic.nl>
  * Copyright 2009 Zachary T Welch zw@superlucidity.net
  * Copyright 2009 David Brownell
- * Copyright (c) 2005-2011 Jim Tcl Project. All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above
+ *    copyright notice, this list of conditions and the following
+ *    disclaimer in the documentation and/or other materials
+ *    provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE JIM TCL PROJECT ``AS IS'' AND ANY
+ * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+ * THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+ * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+ * JIM TCL PROJECT OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ * The views and conclusions contained in the software and documentation
+ * are those of the authors and should not be interpreted as representing
+ * official policies, either expressed or implied, of the Jim Tcl Project.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
-
-#include "jim-nvp.h"
 #include <string.h>
+#include <jim-nvp.h>
 
-int jim_get_nvp(Jim_Interp *interp,
-	Jim_Obj *objptr, const struct jim_nvp *nvp_table, const struct jim_nvp **result)
+int Jim_GetNvp(Jim_Interp *interp,
+	Jim_Obj *objPtr, const Jim_Nvp *nvp_table, const Jim_Nvp **result)
 {
-	struct jim_nvp *n;
+	Jim_Nvp *n;
 	int e;
 
-	e = jim_nvp_name2value_obj(interp, nvp_table, objptr, &n);
+	e = Jim_Nvp_name2value_obj(interp, nvp_table, objPtr, &n);
 	if (e == JIM_ERR)
 		return e;
 
 	/* Success? found? */
 	if (n->name) {
 		/* remove const */
-		*result = (struct jim_nvp *)n;
+		*result = (Jim_Nvp *) n;
 		return JIM_OK;
 	} else
 		return JIM_ERR;
 }
 
-struct jim_nvp *jim_nvp_name2value_simple(const struct jim_nvp *p, const char *name)
+Jim_Nvp *Jim_Nvp_name2value_simple(const Jim_Nvp *p, const char *name)
 {
 	while (p->name) {
-		if (strcmp(name, p->name) == 0)
+		if (0 == strcmp(name, p->name))
 			break;
 		p++;
 	}
-	return (struct jim_nvp *)p;
+	return (Jim_Nvp *) (p);
 }
 
-struct jim_nvp *jim_nvp_name2value_nocase_simple(const struct jim_nvp *p, const char *name)
+Jim_Nvp *Jim_Nvp_name2value_nocase_simple(const Jim_Nvp *p, const char *name)
 {
 	while (p->name) {
-		if (strcasecmp(name, p->name) == 0)
+		if (0 == strcasecmp(name, p->name))
 			break;
 		p++;
 	}
-	return (struct jim_nvp *)p;
+	return (Jim_Nvp *) (p);
 }
 
-int jim_nvp_name2value_obj(Jim_Interp *interp, const struct jim_nvp *p, Jim_Obj *o, struct jim_nvp **result)
+int Jim_Nvp_name2value_obj(Jim_Interp *interp, const Jim_Nvp *p, Jim_Obj *o, Jim_Nvp **result)
 {
-	return jim_nvp_name2value(interp, p, Jim_String(o), result);
+	return Jim_Nvp_name2value(interp, p, Jim_String(o), result);
 }
 
-int jim_nvp_name2value(Jim_Interp *interp, const struct jim_nvp *_p, const char *name, struct jim_nvp **result)
+int Jim_Nvp_name2value(Jim_Interp *interp, const Jim_Nvp *_p, const char *name, Jim_Nvp **result)
 {
-	const struct jim_nvp *p;
+	const Jim_Nvp *p;
 
-	p = jim_nvp_name2value_simple(_p, name);
+	p = Jim_Nvp_name2value_simple(_p, name);
 
 	/* result */
 	if (result)
-		*result = (struct jim_nvp *)p;
+		*result = (Jim_Nvp *) (p);
 
 	/* found? */
 	if (p->name)
@@ -84,23 +105,23 @@ int jim_nvp_name2value(Jim_Interp *interp, const struct jim_nvp *_p, const char 
 		return JIM_ERR;
 }
 
-int jim_nvp_name2value_obj_nocase(Jim_Interp *interp,
-	const struct jim_nvp *p,
+int Jim_Nvp_name2value_obj_nocase(Jim_Interp *interp,
+	const Jim_Nvp *p,
 	Jim_Obj *o,
-	struct jim_nvp **puthere)
+	Jim_Nvp **puthere)
 {
-	return jim_nvp_name2value_nocase(interp, p, Jim_String(o), puthere);
+	return Jim_Nvp_name2value_nocase(interp, p, Jim_String(o), puthere);
 }
 
-int jim_nvp_name2value_nocase(Jim_Interp *interp, const struct jim_nvp *_p, const char *name,
-	struct jim_nvp **puthere)
+int Jim_Nvp_name2value_nocase(Jim_Interp *interp, const Jim_Nvp *_p, const char *name,
+	Jim_Nvp **puthere)
 {
-	const struct jim_nvp *p;
+	const Jim_Nvp *p;
 
-	p = jim_nvp_name2value_nocase_simple(_p, name);
+	p = Jim_Nvp_name2value_nocase_simple(_p, name);
 
 	if (puthere)
-		*puthere = (struct jim_nvp *)p;
+		*puthere = (Jim_Nvp *) (p);
 						/* found */
 	if (p->name)
 		return JIM_OK;
@@ -108,7 +129,7 @@ int jim_nvp_name2value_nocase(Jim_Interp *interp, const struct jim_nvp *_p, cons
 		return JIM_ERR;
 }
 
-int jim_nvp_value2name_obj(Jim_Interp *interp, const struct jim_nvp *p, Jim_Obj *o, struct jim_nvp **result)
+int Jim_Nvp_value2name_obj(Jim_Interp *interp, const Jim_Nvp *p, Jim_Obj *o, Jim_Nvp **result)
 {
 	int e;
 	jim_wide w;
@@ -117,27 +138,27 @@ int jim_nvp_value2name_obj(Jim_Interp *interp, const struct jim_nvp *p, Jim_Obj 
 	if (e != JIM_OK)
 		return e;
 
-	return jim_nvp_value2name(interp, p, w, result);
+	return Jim_Nvp_value2name(interp, p, w, result);
 }
 
-struct jim_nvp *jim_nvp_value2name_simple(const struct jim_nvp *p, int value)
+Jim_Nvp *Jim_Nvp_value2name_simple(const Jim_Nvp *p, int value)
 {
 	while (p->name) {
 		if (value == p->value)
 			break;
 		p++;
 	}
-	return (struct jim_nvp *)p;
+	return (Jim_Nvp *) (p);
 }
 
-int jim_nvp_value2name(Jim_Interp *interp, const struct jim_nvp *_p, int value, struct jim_nvp **result)
+int Jim_Nvp_value2name(Jim_Interp *interp, const Jim_Nvp *_p, int value, Jim_Nvp **result)
 {
-	const struct jim_nvp *p;
+	const Jim_Nvp *p;
 
-	p = jim_nvp_value2name_simple(_p, value);
+	p = Jim_Nvp_value2name_simple(_p, value);
 
 	if (result)
-		*result = (struct jim_nvp *)p;
+		*result = (Jim_Nvp *) (p);
 
 	if (p->name)
 		return JIM_OK;
@@ -145,7 +166,7 @@ int jim_nvp_value2name(Jim_Interp *interp, const struct jim_nvp *_p, int value, 
 		return JIM_ERR;
 }
 
-int jim_getopt_setup(struct jim_getopt_info *p, Jim_Interp *interp, int argc, Jim_Obj *const *argv)
+int Jim_GetOpt_Setup(Jim_GetOptInfo *p, Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 {
 	memset(p, 0, sizeof(*p));
 	p->interp = interp;
@@ -155,7 +176,7 @@ int jim_getopt_setup(struct jim_getopt_info *p, Jim_Interp *interp, int argc, Ji
 	return JIM_OK;
 }
 
-void jim_getopt_debug(struct jim_getopt_info *p)
+void Jim_GetOpt_Debug(Jim_GetOptInfo *p)
 {
 	int x;
 
@@ -165,7 +186,7 @@ void jim_getopt_debug(struct jim_getopt_info *p)
 	fprintf(stderr, "-------\n");
 }
 
-int jim_getopt_obj(struct jim_getopt_info *goi, Jim_Obj **puthere)
+int Jim_GetOpt_Obj(Jim_GetOptInfo *goi, Jim_Obj **puthere)
 {
 	Jim_Obj *o;
 
@@ -178,19 +199,19 @@ int jim_getopt_obj(struct jim_getopt_info *goi, Jim_Obj **puthere)
 	}
 	if (puthere)
 		*puthere = o;
-	if (o)
+	if (o != NULL)
 		return JIM_OK;
 	else
 		return JIM_ERR;
 }
 
-int jim_getopt_string(struct jim_getopt_info *goi, const char **puthere, int *len)
+int Jim_GetOpt_String(Jim_GetOptInfo *goi, const char **puthere, int *len)
 {
 	int r;
 	Jim_Obj *o;
 	const char *cp;
 
-	r = jim_getopt_obj(goi, &o);
+	r = Jim_GetOpt_Obj(goi, &o);
 	if (r == JIM_OK) {
 		cp = Jim_GetString(o, len);
 		if (puthere) {
@@ -200,16 +221,16 @@ int jim_getopt_string(struct jim_getopt_info *goi, const char **puthere, int *le
 	return r;
 }
 
-int jim_getopt_double(struct jim_getopt_info *goi, double *puthere)
+int Jim_GetOpt_Double(Jim_GetOptInfo *goi, double *puthere)
 {
 	int r;
 	Jim_Obj *o;
 	double _safe;
 
-	if (!puthere)
+	if (puthere == NULL)
 		puthere = &_safe;
 
-	r = jim_getopt_obj(goi, &o);
+	r = Jim_GetOpt_Obj(goi, &o);
 	if (r == JIM_OK) {
 		r = Jim_GetDouble(goi->interp, o, puthere);
 		if (r != JIM_OK)
@@ -218,61 +239,61 @@ int jim_getopt_double(struct jim_getopt_info *goi, double *puthere)
 	return r;
 }
 
-int jim_getopt_wide(struct jim_getopt_info *goi, jim_wide *puthere)
+int Jim_GetOpt_Wide(Jim_GetOptInfo *goi, jim_wide *puthere)
 {
 	int r;
 	Jim_Obj *o;
 	jim_wide _safe;
 
-	if (!puthere)
+	if (puthere == NULL)
 		puthere = &_safe;
 
-	r = jim_getopt_obj(goi, &o);
+	r = Jim_GetOpt_Obj(goi, &o);
 	if (r == JIM_OK)
 		r = Jim_GetWide(goi->interp, o, puthere);
 	return r;
 }
 
-int jim_getopt_nvp(struct jim_getopt_info *goi, const struct jim_nvp *nvp, struct jim_nvp **puthere)
+int Jim_GetOpt_Nvp(Jim_GetOptInfo *goi, const Jim_Nvp *nvp, Jim_Nvp **puthere)
 {
-	struct jim_nvp *_safe;
+	Jim_Nvp *_safe;
 	Jim_Obj *o;
 	int e;
 
-	if (!puthere)
+	if (puthere == NULL)
 		puthere = &_safe;
 
-	e = jim_getopt_obj(goi, &o);
+	e = Jim_GetOpt_Obj(goi, &o);
 	if (e == JIM_OK)
-		e = jim_nvp_name2value_obj(goi->interp, nvp, o, puthere);
+		e = Jim_Nvp_name2value_obj(goi->interp, nvp, o, puthere);
 
 	return e;
 }
 
-void jim_getopt_nvp_unknown(struct jim_getopt_info *goi, const struct jim_nvp *nvptable, int hadprefix)
+void Jim_GetOpt_NvpUnknown(Jim_GetOptInfo *goi, const Jim_Nvp *nvptable, int hadprefix)
 {
 	if (hadprefix)
-		jim_set_result_nvp_unknown(goi->interp, goi->argv[-2], goi->argv[-1], nvptable);
+		Jim_SetResult_NvpUnknown(goi->interp, goi->argv[-2], goi->argv[-1], nvptable);
 	else
-		jim_set_result_nvp_unknown(goi->interp, NULL, goi->argv[-1], nvptable);
+		Jim_SetResult_NvpUnknown(goi->interp, NULL, goi->argv[-1], nvptable);
 }
 
-int jim_getopt_enum(struct jim_getopt_info *goi, const char *const *lookup, int *puthere)
+int Jim_GetOpt_Enum(Jim_GetOptInfo *goi, const char *const *lookup, int *puthere)
 {
 	int _safe;
 	Jim_Obj *o;
 	int e;
 
-	if (!puthere)
+	if (puthere == NULL)
 		puthere = &_safe;
-	e = jim_getopt_obj(goi, &o);
+	e = Jim_GetOpt_Obj(goi, &o);
 	if (e == JIM_OK)
 		e = Jim_GetEnum(goi->interp, o, lookup, puthere, "option", JIM_ERRMSG);
 	return e;
 }
 
-void jim_set_result_nvp_unknown(Jim_Interp *interp,
-	Jim_Obj *param_name, Jim_Obj *param_value, const struct jim_nvp *nvp)
+void Jim_SetResult_NvpUnknown(Jim_Interp *interp,
+	Jim_Obj *param_name, Jim_Obj *param_value, const Jim_Nvp *nvp)
 {
 	if (param_name)
 		Jim_SetResultFormatted(interp,
@@ -297,7 +318,7 @@ void jim_set_result_nvp_unknown(Jim_Interp *interp,
 	}
 }
 
-const char *jim_debug_argv_string(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
+const char *Jim_Debug_ArgvString(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 {
 	static Jim_Obj *debug_string_obj;
 
@@ -311,4 +332,10 @@ const char *jim_debug_argv_string(Jim_Interp *interp, int argc, Jim_Obj *const *
 		Jim_AppendStrings(interp, debug_string_obj, Jim_String(argv[x]), " ", NULL);
 
 	return Jim_String(debug_string_obj);
+}
+
+int Jim_nvpInit(Jim_Interp *interp)
+{
+	/* This is really a helper library, not an extension, but this is the easy way */
+	return JIM_OK;
 }

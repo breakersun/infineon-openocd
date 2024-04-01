@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2005 by Dominic Rath                                    *
  *   Dominic.Rath@gmx.de                                                   *
@@ -12,6 +10,19 @@
  *                                                                         *
  *   Copyright (C) 2018 by Liviu Ionescu                                   *
  *   <ilg@livius.net>                                                      *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -37,7 +48,6 @@ enum {
 	ARMV4_5_SPSR_ABT = 35,
 	ARMV4_5_SPSR_UND = 36,
 	ARM_SPSR_MON = 41,
-	ARM_SPSR_HYP = 43,
 };
 
 static const uint8_t arm_usr_indices[17] = {
@@ -66,10 +76,6 @@ static const uint8_t arm_und_indices[3] = {
 
 static const uint8_t arm_mon_indices[3] = {
 	39, 40, ARM_SPSR_MON,
-};
-
-static const uint8_t arm_hyp_indices[2] = {
-	42, ARM_SPSR_HYP,
 };
 
 static const struct {
@@ -157,14 +163,6 @@ static const struct {
 		.name = "Handler",
 		.psr = ARM_MODE_HANDLER,
 	},
-
-	/* armv7-a with virtualization extension */
-	{
-		.name = "Hypervisor",
-		.psr = ARM_MODE_HYP,
-		.n_indices = ARRAY_SIZE(arm_hyp_indices),
-		.indices = arm_hyp_indices,
-	},
 };
 
 /** Map PSR mode bits to the name of an ARM processor operating mode. */
@@ -211,8 +209,6 @@ int arm_mode_to_number(enum arm_mode mode)
 		case ARM_MODE_MON:
 		case ARM_MODE_1176_MON:
 			return 7;
-		case ARM_MODE_HYP:
-			return 8;
 		default:
 			LOG_ERROR("invalid mode value encountered %d", mode);
 			return -1;
@@ -239,8 +235,6 @@ enum arm_mode armv4_5_number_to_mode(int number)
 			return ARM_MODE_SYS;
 		case 7:
 			return ARM_MODE_MON;
-		case 8:
-			return ARM_MODE_HYP;
 		default:
 			LOG_ERROR("mode index out of bounds %d", number);
 			return ARM_MODE_ANY;
@@ -280,24 +274,24 @@ static const struct {
 	 * correspond to r0..r7, and the fifteenth to PC, so that callers
 	 * don't need to map them.
 	 */
-	[0] = { .name = "r0", .cookie = 0, .mode = ARM_MODE_ANY, .gdb_index = 0, },
-	[1] = { .name = "r1", .cookie = 1, .mode = ARM_MODE_ANY, .gdb_index = 1, },
-	[2] = { .name = "r2", .cookie = 2, .mode = ARM_MODE_ANY, .gdb_index = 2, },
-	[3] = { .name = "r3", .cookie = 3, .mode = ARM_MODE_ANY, .gdb_index = 3, },
-	[4] = { .name = "r4", .cookie = 4, .mode = ARM_MODE_ANY, .gdb_index = 4, },
-	[5] = { .name = "r5", .cookie = 5, .mode = ARM_MODE_ANY, .gdb_index = 5, },
-	[6] = { .name = "r6", .cookie = 6, .mode = ARM_MODE_ANY, .gdb_index = 6, },
-	[7] = { .name = "r7", .cookie = 7, .mode = ARM_MODE_ANY, .gdb_index = 7, },
+	{ .name = "r0", .cookie = 0, .mode = ARM_MODE_ANY, .gdb_index = 0, },
+	{ .name = "r1", .cookie = 1, .mode = ARM_MODE_ANY, .gdb_index = 1, },
+	{ .name = "r2", .cookie = 2, .mode = ARM_MODE_ANY, .gdb_index = 2, },
+	{ .name = "r3", .cookie = 3, .mode = ARM_MODE_ANY, .gdb_index = 3, },
+	{ .name = "r4", .cookie = 4, .mode = ARM_MODE_ANY, .gdb_index = 4, },
+	{ .name = "r5", .cookie = 5, .mode = ARM_MODE_ANY, .gdb_index = 5, },
+	{ .name = "r6", .cookie = 6, .mode = ARM_MODE_ANY, .gdb_index = 6, },
+	{ .name = "r7", .cookie = 7, .mode = ARM_MODE_ANY, .gdb_index = 7, },
 
 	/* NOTE: regs 8..12 might be shadowed by FIQ ... flagging
 	 * them as MODE_ANY creates special cases.  (ANY means
 	 * "not mapped" elsewhere; here it's "everything but FIQ".)
 	 */
-	[8] = { .name = "r8", .cookie = 8, .mode = ARM_MODE_ANY, .gdb_index = 8, },
-	[9] = { .name = "r9", .cookie = 9, .mode = ARM_MODE_ANY, .gdb_index = 9, },
-	[10] = { .name = "r10", .cookie = 10, .mode = ARM_MODE_ANY, .gdb_index = 10, },
-	[11] = { .name = "r11", .cookie = 11, .mode = ARM_MODE_ANY, .gdb_index = 11, },
-	[12] = { .name = "r12", .cookie = 12, .mode = ARM_MODE_ANY, .gdb_index = 12, },
+	{ .name = "r8", .cookie = 8, .mode = ARM_MODE_ANY, .gdb_index = 8, },
+	{ .name = "r9", .cookie = 9, .mode = ARM_MODE_ANY, .gdb_index = 9, },
+	{ .name = "r10", .cookie = 10, .mode = ARM_MODE_ANY, .gdb_index = 10, },
+	{ .name = "r11", .cookie = 11, .mode = ARM_MODE_ANY, .gdb_index = 11, },
+	{ .name = "r12", .cookie = 12, .mode = ARM_MODE_ANY, .gdb_index = 12, },
 
 	/* Historical GDB mapping of indices:
 	 *  - 13-14 are sp and lr, but banked counterparts are used
@@ -306,51 +300,48 @@ static const struct {
 	 */
 
 	/* NOTE all MODE_USR registers are equivalent to MODE_SYS ones */
-	[13] = { .name = "sp_usr", .cookie = 13, .mode = ARM_MODE_USR, .gdb_index = 26, },
-	[14] = { .name = "lr_usr", .cookie = 14, .mode = ARM_MODE_USR, .gdb_index = 27, },
+	{ .name = "sp_usr", .cookie = 13, .mode = ARM_MODE_USR, .gdb_index = 26, },
+	{ .name = "lr_usr", .cookie = 14, .mode = ARM_MODE_USR, .gdb_index = 27, },
 
 	/* guaranteed to be at index 15 */
-	[15] = { .name = "pc", .cookie = 15, .mode = ARM_MODE_ANY, .gdb_index = 15, },
-	[16] = { .name = "r8_fiq", .cookie = 8, .mode = ARM_MODE_FIQ, .gdb_index = 28, },
-	[17] = { .name = "r9_fiq", .cookie = 9, .mode = ARM_MODE_FIQ, .gdb_index = 29, },
-	[18] = { .name = "r10_fiq", .cookie = 10, .mode = ARM_MODE_FIQ, .gdb_index = 30, },
-	[19] = { .name = "r11_fiq", .cookie = 11, .mode = ARM_MODE_FIQ, .gdb_index = 31, },
-	[20] = { .name = "r12_fiq", .cookie = 12, .mode = ARM_MODE_FIQ, .gdb_index = 32, },
+	{ .name = "pc", .cookie = 15, .mode = ARM_MODE_ANY, .gdb_index = 15, },
+	{ .name = "r8_fiq", .cookie = 8, .mode = ARM_MODE_FIQ, .gdb_index = 28, },
+	{ .name = "r9_fiq", .cookie = 9, .mode = ARM_MODE_FIQ, .gdb_index = 29, },
+	{ .name = "r10_fiq", .cookie = 10, .mode = ARM_MODE_FIQ, .gdb_index = 30, },
+	{ .name = "r11_fiq", .cookie = 11, .mode = ARM_MODE_FIQ, .gdb_index = 31, },
+	{ .name = "r12_fiq", .cookie = 12, .mode = ARM_MODE_FIQ, .gdb_index = 32, },
 
-	[21] = { .name = "sp_fiq", .cookie = 13, .mode = ARM_MODE_FIQ, .gdb_index = 33, },
-	[22] = { .name = "lr_fiq", .cookie = 14, .mode = ARM_MODE_FIQ, .gdb_index = 34, },
+	{ .name = "sp_fiq", .cookie = 13, .mode = ARM_MODE_FIQ, .gdb_index = 33, },
+	{ .name = "lr_fiq", .cookie = 14, .mode = ARM_MODE_FIQ, .gdb_index = 34, },
 
-	[23] = { .name = "sp_irq", .cookie = 13, .mode = ARM_MODE_IRQ, .gdb_index = 35, },
-	[24] = { .name = "lr_irq", .cookie = 14, .mode = ARM_MODE_IRQ, .gdb_index = 36, },
+	{ .name = "sp_irq", .cookie = 13, .mode = ARM_MODE_IRQ, .gdb_index = 35, },
+	{ .name = "lr_irq", .cookie = 14, .mode = ARM_MODE_IRQ, .gdb_index = 36, },
 
-	[25] = { .name = "sp_svc", .cookie = 13, .mode = ARM_MODE_SVC, .gdb_index = 37, },
-	[26] = { .name = "lr_svc", .cookie = 14, .mode = ARM_MODE_SVC, .gdb_index = 38, },
+	{ .name = "sp_svc", .cookie = 13, .mode = ARM_MODE_SVC, .gdb_index = 37, },
+	{ .name = "lr_svc", .cookie = 14, .mode = ARM_MODE_SVC, .gdb_index = 38, },
 
-	[27] = { .name = "sp_abt", .cookie = 13, .mode = ARM_MODE_ABT, .gdb_index = 39, },
-	[28] = { .name = "lr_abt", .cookie = 14, .mode = ARM_MODE_ABT, .gdb_index = 40, },
+	{ .name = "sp_abt", .cookie = 13, .mode = ARM_MODE_ABT, .gdb_index = 39, },
+	{ .name = "lr_abt", .cookie = 14, .mode = ARM_MODE_ABT, .gdb_index = 40, },
 
-	[29] = { .name = "sp_und", .cookie = 13, .mode = ARM_MODE_UND, .gdb_index = 41, },
-	[30] = { .name = "lr_und", .cookie = 14, .mode = ARM_MODE_UND, .gdb_index = 42, },
+	{ .name = "sp_und", .cookie = 13, .mode = ARM_MODE_UND, .gdb_index = 41, },
+	{ .name = "lr_und", .cookie = 14, .mode = ARM_MODE_UND, .gdb_index = 42, },
 
-	[31] = { .name = "cpsr", .cookie = 16, .mode = ARM_MODE_ANY, .gdb_index = 25, },
-	[32] = { .name = "spsr_fiq", .cookie = 16, .mode = ARM_MODE_FIQ, .gdb_index = 43, },
-	[33] = { .name = "spsr_irq", .cookie = 16, .mode = ARM_MODE_IRQ, .gdb_index = 44, },
-	[34] = { .name = "spsr_svc", .cookie = 16, .mode = ARM_MODE_SVC, .gdb_index = 45, },
-	[35] = { .name = "spsr_abt", .cookie = 16, .mode = ARM_MODE_ABT, .gdb_index = 46, },
-	[36] = { .name = "spsr_und", .cookie = 16, .mode = ARM_MODE_UND, .gdb_index = 47, },
+	{ .name = "cpsr", .cookie = 16, .mode = ARM_MODE_ANY, .gdb_index = 25, },
+	{ .name = "spsr_fiq", .cookie = 16, .mode = ARM_MODE_FIQ, .gdb_index = 43, },
+	{ .name = "spsr_irq", .cookie = 16, .mode = ARM_MODE_IRQ, .gdb_index = 44, },
+	{ .name = "spsr_svc", .cookie = 16, .mode = ARM_MODE_SVC, .gdb_index = 45, },
+	{ .name = "spsr_abt", .cookie = 16, .mode = ARM_MODE_ABT, .gdb_index = 46, },
+	{ .name = "spsr_und", .cookie = 16, .mode = ARM_MODE_UND, .gdb_index = 47, },
 
 	/* These are only used for GDB target description, banked registers are accessed instead */
-	[37] = { .name = "sp", .cookie = 13, .mode = ARM_MODE_ANY, .gdb_index = 13, },
-	[38] = { .name = "lr", .cookie = 14, .mode = ARM_MODE_ANY, .gdb_index = 14, },
+	{ .name = "sp", .cookie = 13, .mode = ARM_MODE_ANY, .gdb_index = 13, },
+	{ .name = "lr", .cookie = 14, .mode = ARM_MODE_ANY, .gdb_index = 14, },
 
 	/* These exist only when the Security Extension (TrustZone) is present */
-	[39] = { .name = "sp_mon", .cookie = 13, .mode = ARM_MODE_MON, .gdb_index = 48, },
-	[40] = { .name = "lr_mon", .cookie = 14, .mode = ARM_MODE_MON, .gdb_index = 49, },
-	[41] = { .name = "spsr_mon", .cookie = 16, .mode = ARM_MODE_MON, .gdb_index = 50, },
+	{ .name = "sp_mon", .cookie = 13, .mode = ARM_MODE_MON, .gdb_index = 48, },
+	{ .name = "lr_mon", .cookie = 14, .mode = ARM_MODE_MON, .gdb_index = 49, },
+	{ .name = "spsr_mon", .cookie = 16, .mode = ARM_MODE_MON, .gdb_index = 50, },
 
-	/* These exist only when the Virtualization Extensions is present */
-	[42] = { .name = "sp_hyp", .cookie = 13, .mode = ARM_MODE_HYP, .gdb_index = 51, },
-	[43] = { .name = "spsr_hyp", .cookie = 16, .mode = ARM_MODE_HYP, .gdb_index = 52, },
 };
 
 static const struct {
@@ -400,7 +391,7 @@ static const struct {
 /* map core mode (USR, FIQ, ...) and register number to
  * indices into the register cache
  */
-const int armv4_5_core_reg_map[9][17] = {
+const int armv4_5_core_reg_map[8][17] = {
 	{	/* USR */
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 31
 	},
@@ -423,10 +414,7 @@ const int armv4_5_core_reg_map[9][17] = {
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 31
 	},
 	{	/* MON */
-		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 39, 40, 15, 41,
-	},
-	{	/* HYP */
-		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 42, 14, 15, 43,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 37, 38, 15, 39,
 	}
 };
 
@@ -535,7 +523,7 @@ static struct reg_feature arm_gdb_dummy_fp_features = {
  * Modern ARM cores use Vector Floating Point (VFP), if they
  * have any floating point support.  VFP is not FPA-compatible.
  */
-static struct reg arm_gdb_dummy_fp_reg = {
+struct reg arm_gdb_dummy_fp_reg = {
 	.name = "GDB dummy FPA register",
 	.value = (uint8_t *) arm_gdb_dummy_fp_value,
 	.valid = true,
@@ -552,7 +540,7 @@ static const uint8_t arm_gdb_dummy_fps_value[4];
  * Dummy FPA status registers are required to support GDB on ARM.
  * Register packets require an obsolete FPA status register.
  */
-static struct reg arm_gdb_dummy_fps_reg = {
+struct reg arm_gdb_dummy_fps_reg = {
 	.name = "GDB dummy FPA status register",
 	.value = (uint8_t *) arm_gdb_dummy_fps_value,
 	.valid = true,
@@ -670,11 +658,7 @@ struct reg_cache *arm_build_reg_cache(struct target *target, struct arm *arm)
 	for (i = 0; i < num_core_regs; i++) {
 		/* Skip registers this core doesn't expose */
 		if (arm_core_regs[i].mode == ARM_MODE_MON
-			&& arm->core_type != ARM_CORE_TYPE_SEC_EXT
-			&& arm->core_type != ARM_CORE_TYPE_VIRT_EXT)
-			continue;
-		if (arm_core_regs[i].mode == ARM_MODE_HYP
-			&& arm->core_type != ARM_CORE_TYPE_VIRT_EXT)
+			&& arm->core_type != ARM_MODE_MON)
 			continue;
 
 		/* REVISIT handle Cortex-M, which only shadows R13/SP */
@@ -758,27 +742,6 @@ struct reg_cache *arm_build_reg_cache(struct target *target, struct arm *arm)
 	return cache;
 }
 
-void arm_free_reg_cache(struct arm *arm)
-{
-	if (!arm || !arm->core_cache)
-		return;
-
-	struct reg_cache *cache = arm->core_cache;
-
-	for (unsigned int i = 0; i < cache->num_regs; i++) {
-		struct reg *reg = &cache->reg_list[i];
-
-		free(reg->feature);
-		free(reg->reg_data_type);
-	}
-
-	free(cache->reg_list[0].arch_info);
-	free(cache->reg_list);
-	free(cache);
-
-	arm->core_cache = NULL;
-}
-
 int arm_arch_state(struct target *target)
 {
 	struct arm *arm = target_to_arm(target);
@@ -805,6 +768,9 @@ int arm_arch_state(struct target *target)
 	return ERROR_OK;
 }
 
+#define ARMV4_5_CORE_REG_MODENUM(cache, mode, num) \
+	(cache->reg_list[armv4_5_core_reg_map[mode][num]])
+
 COMMAND_HANDLER(handle_armv4_5_reg_command)
 {
 	struct target *target = get_current_target(CMD_CTX);
@@ -812,17 +778,17 @@ COMMAND_HANDLER(handle_armv4_5_reg_command)
 	struct reg *regs;
 
 	if (!is_arm(arm)) {
-		command_print(CMD, "current target isn't an ARM");
+		command_print(CMD_CTX, "current target isn't an ARM");
 		return ERROR_FAIL;
 	}
 
 	if (target->state != TARGET_HALTED) {
-		command_print(CMD, "error: target must be halted for register accesses");
+		command_print(CMD_CTX, "error: target must be halted for register accesses");
 		return ERROR_FAIL;
 	}
 
-	if (arm->core_type != ARM_CORE_TYPE_STD) {
-		command_print(CMD,
+	if (arm->core_type != ARM_MODE_ANY) {
+		command_print(CMD_CTX,
 			"Microcontroller Profile not supported - use standard reg cmd");
 		return ERROR_OK;
 	}
@@ -833,7 +799,7 @@ COMMAND_HANDLER(handle_armv4_5_reg_command)
 	}
 
 	if (!arm->full_context) {
-		command_print(CMD, "error: target doesn't support %s",
+		command_print(CMD_CTX, "error: target doesn't support %s",
 			CMD_NAME);
 		return ERROR_FAIL;
 	}
@@ -845,9 +811,6 @@ COMMAND_HANDLER(handle_armv4_5_reg_command)
 		char *sep = "\n";
 		char *shadow = "";
 
-		if (!arm_mode_data[mode].n_indices)
-			continue;
-
 		/* label this bank of registers (or shadows) */
 		switch (arm_mode_data[mode].psr) {
 			case ARM_MODE_SYS:
@@ -856,14 +819,8 @@ COMMAND_HANDLER(handle_armv4_5_reg_command)
 				name = "System and User";
 				sep = "";
 				break;
-			case ARM_MODE_HYP:
-				if (arm->core_type != ARM_CORE_TYPE_VIRT_EXT)
-					continue;
-			/* FALLTHROUGH */
 			case ARM_MODE_MON:
-			case ARM_MODE_1176_MON:
-				if (arm->core_type != ARM_CORE_TYPE_SEC_EXT
-					&& arm->core_type != ARM_CORE_TYPE_VIRT_EXT)
+				if (arm->core_type != ARM_MODE_MON)
 					continue;
 			/* FALLTHROUGH */
 			default:
@@ -871,7 +828,7 @@ COMMAND_HANDLER(handle_armv4_5_reg_command)
 				shadow = "shadow ";
 				break;
 		}
-		command_print(CMD, "%s%s mode %sregisters",
+		command_print(CMD_CTX, "%s%s mode %sregisters",
 			sep, name, shadow);
 
 		/* display N rows of up to 4 registers each */
@@ -898,95 +855,119 @@ COMMAND_HANDLER(handle_armv4_5_reg_command)
 						"%8s: %8.8" PRIx32 " ",
 						reg->name, value);
 			}
-			command_print(CMD, "%s", output);
+			command_print(CMD_CTX, "%s", output);
 		}
 	}
 
 	return ERROR_OK;
 }
 
-COMMAND_HANDLER(handle_arm_core_state_command)
+COMMAND_HANDLER(handle_armv4_5_core_state_command)
 {
 	struct target *target = get_current_target(CMD_CTX);
 	struct arm *arm = target_to_arm(target);
-	int ret = ERROR_OK;
 
 	if (!is_arm(arm)) {
-		command_print(CMD, "current target isn't an ARM");
+		command_print(CMD_CTX, "current target isn't an ARM");
 		return ERROR_FAIL;
 	}
 
+	if (arm->core_type == ARM_MODE_THREAD) {
+		/* armv7m not supported */
+		command_print(CMD_CTX, "Unsupported Command");
+		return ERROR_OK;
+	}
+
 	if (CMD_ARGC > 0) {
-		if (strcmp(CMD_ARGV[0], "arm") == 0) {
-			if (arm->core_type == ARM_CORE_TYPE_M_PROFILE) {
-				command_print(CMD, "arm mode not supported on Cortex-M");
-				ret = ERROR_FAIL;
-			} else {
-				arm->core_state = ARM_STATE_ARM;
-			}
-		}
+		if (strcmp(CMD_ARGV[0], "arm") == 0)
+			arm->core_state = ARM_STATE_ARM;
 		if (strcmp(CMD_ARGV[0], "thumb") == 0)
 			arm->core_state = ARM_STATE_THUMB;
 	}
 
-	command_print(CMD, "core state: %s", arm_state_strings[arm->core_state]);
+	command_print(CMD_CTX, "core state: %s", arm_state_strings[arm->core_state]);
 
-	return ret;
+	return ERROR_OK;
 }
 
 COMMAND_HANDLER(handle_arm_disassemble_command)
 {
-#if HAVE_CAPSTONE
+	int retval = ERROR_OK;
 	struct target *target = get_current_target(CMD_CTX);
 
-	if (!target) {
+	if (target == NULL) {
 		LOG_ERROR("No target selected");
 		return ERROR_FAIL;
 	}
 
 	struct arm *arm = target_to_arm(target);
 	target_addr_t address;
-	unsigned int count = 1;
-	bool thumb = false;
+	int count = 1;
+	int thumb = 0;
 
 	if (!is_arm(arm)) {
-		command_print(CMD, "current target isn't an ARM");
+		command_print(CMD_CTX, "current target isn't an ARM");
 		return ERROR_FAIL;
 	}
 
-	if (arm->core_type == ARM_CORE_TYPE_M_PROFILE) {
+	if (arm->core_type == ARM_MODE_THREAD) {
 		/* armv7m is always thumb mode */
-		thumb = true;
+		thumb = 1;
 	}
 
 	switch (CMD_ARGC) {
 		case 3:
 			if (strcmp(CMD_ARGV[2], "thumb") != 0)
-				return ERROR_COMMAND_SYNTAX_ERROR;
-			thumb = true;
+				goto usage;
+			thumb = 1;
 		/* FALL THROUGH */
 		case 2:
-			COMMAND_PARSE_NUMBER(uint, CMD_ARGV[1], count);
+			COMMAND_PARSE_NUMBER(int, CMD_ARGV[1], count);
 		/* FALL THROUGH */
 		case 1:
 			COMMAND_PARSE_ADDRESS(CMD_ARGV[0], address);
 			if (address & 0x01) {
 				if (!thumb) {
-					command_print(CMD, "Disassemble as Thumb");
-					thumb = true;
+					command_print(CMD_CTX, "Disassemble as Thumb");
+					thumb = 1;
 				}
 				address &= ~1;
 			}
 			break;
 		default:
-			return ERROR_COMMAND_SYNTAX_ERROR;
+usage:
+			count = 0;
+			retval = ERROR_COMMAND_SYNTAX_ERROR;
 	}
 
-	return arm_disassemble(CMD, target, address, count, thumb);
-#else
-	command_print(CMD, "capstone disassembly framework required");
-	return ERROR_FAIL;
-#endif
+	while (count-- > 0) {
+		struct arm_instruction cur_instruction;
+
+		if (thumb) {
+			/* Always use Thumb2 disassembly for best handling
+			 * of 32-bit BL/BLX, and to work with newer cores
+			 * (some ARMv6, all ARMv7) that use Thumb2.
+			 */
+			retval = thumb2_opcode(target, address,
+					&cur_instruction);
+			if (retval != ERROR_OK)
+				break;
+		} else {
+			uint32_t opcode;
+
+			retval = target_read_u32(target, address, &opcode);
+			if (retval != ERROR_OK)
+				break;
+			retval = arm_evaluate_opcode(opcode, address,
+					&cur_instruction) != ERROR_OK;
+			if (retval != ERROR_OK)
+				break;
+		}
+		command_print(CMD_CTX, "%s", cur_instruction.text);
+		address += cur_instruction.instruction_size;
+	}
+
+	return retval;
 }
 
 static int jim_mcrmrc(Jim_Interp *interp, int argc, Jim_Obj * const *argv)
@@ -997,10 +978,10 @@ static int jim_mcrmrc(Jim_Interp *interp, int argc, Jim_Obj * const *argv)
 	int retval;
 
 	context = current_command_context(interp);
-	assert(context);
+	assert(context != NULL);
 
 	target = get_current_target(context);
-	if (!target) {
+	if (target == NULL) {
 		LOG_ERROR("%s: no current target", __func__);
 		return JIM_ERR;
 	}
@@ -1023,8 +1004,8 @@ static int jim_mcrmrc(Jim_Interp *interp, int argc, Jim_Obj * const *argv)
 	int cpnum;
 	uint32_t op1;
 	uint32_t op2;
-	uint32_t crn;
-	uint32_t crm;
+	uint32_t CRn;
+	uint32_t CRm;
 	uint32_t value;
 	long l;
 
@@ -1061,7 +1042,7 @@ static int jim_mcrmrc(Jim_Interp *interp, int argc, Jim_Obj * const *argv)
 			"CRn", (int) l);
 		return JIM_ERR;
 	}
-	crn = l;
+	CRn = l;
 
 	retval = Jim_GetLong(interp, argv[4], &l);
 	if (retval != JIM_OK)
@@ -1071,7 +1052,7 @@ static int jim_mcrmrc(Jim_Interp *interp, int argc, Jim_Obj * const *argv)
 			"CRm", (int) l);
 		return JIM_ERR;
 	}
-	crm = l;
+	CRm = l;
 
 	retval = Jim_GetLong(interp, argv[5], &l);
 	if (retval != JIM_OK)
@@ -1100,14 +1081,14 @@ static int jim_mcrmrc(Jim_Interp *interp, int argc, Jim_Obj * const *argv)
 		value = l;
 
 		/* NOTE: parameters reordered! */
-		/* ARMV4_5_MCR(cpnum, op1, 0, crn, crm, op2) */
-		retval = arm->mcr(target, cpnum, op1, op2, crn, crm, value);
+		/* ARMV4_5_MCR(cpnum, op1, 0, CRn, CRm, op2) */
+		retval = arm->mcr(target, cpnum, op1, op2, CRn, CRm, value);
 		if (retval != ERROR_OK)
 			return JIM_ERR;
 	} else {
 		/* NOTE: parameters reordered! */
-		/* ARMV4_5_MRC(cpnum, op1, 0, crn, crm, op2) */
-		retval = arm->mrc(target, cpnum, op1, op2, crn, crm, &value);
+		/* ARMV4_5_MRC(cpnum, op1, 0, CRn, CRm, op2) */
+		retval = arm->mrc(target, cpnum, op1, op2, CRn, CRm, &value);
 		if (retval != ERROR_OK)
 			return JIM_ERR;
 
@@ -1117,6 +1098,11 @@ static int jim_mcrmrc(Jim_Interp *interp, int argc, Jim_Obj * const *argv)
 	return JIM_OK;
 }
 
+extern __COMMAND_HANDLER(handle_common_semihosting_command);
+extern __COMMAND_HANDLER(handle_common_semihosting_fileio_command);
+extern __COMMAND_HANDLER(handle_common_semihosting_resumable_exit_command);
+extern __COMMAND_HANDLER(handle_common_semihosting_cmdline);
+
 static const struct command_registration arm_exec_command_handlers[] = {
 	{
 		.name = "reg",
@@ -1124,6 +1110,20 @@ static const struct command_registration arm_exec_command_handlers[] = {
 		.mode = COMMAND_EXEC,
 		.help = "display ARM core registers",
 		.usage = "",
+	},
+	{
+		.name = "core_state",
+		.handler = handle_armv4_5_core_state_command,
+		.mode = COMMAND_EXEC,
+		.usage = "['arm'|'thumb']",
+		.help = "display/change ARM core state",
+	},
+	{
+		.name = "disassemble",
+		.handler = handle_arm_disassemble_command,
+		.mode = COMMAND_EXEC,
+		.usage = "address [count ['thumb']]",
+		.help = "disassemble instructions ",
 	},
 	{
 		.name = "mcr",
@@ -1140,32 +1140,35 @@ static const struct command_registration arm_exec_command_handlers[] = {
 		.usage = "cpnum op1 CRn CRm op2",
 	},
 	{
-		.chain = arm_all_profiles_command_handlers,
+		.name = "semihosting",
+		.handler = handle_common_semihosting_command,
+		.mode = COMMAND_EXEC,
+		.usage = "['enable'|'disable']",
+		.help = "activate support for semihosting operations",
+	},
+	{
+		.name = "semihosting_cmdline",
+		.handler = handle_common_semihosting_cmdline,
+		.mode = COMMAND_EXEC,
+		.usage = "arguments",
+		.help = "command line arguments to be passed to program",
+	},
+	{
+		.name = "semihosting_fileio",
+		.handler = handle_common_semihosting_fileio_command,
+		.mode = COMMAND_EXEC,
+		.usage = "['enable'|'disable']",
+		.help = "activate support for semihosting fileio operations",
+	},
+	{
+		.name = "semihosting_resexit",
+		.handler = handle_common_semihosting_resumable_exit_command,
+		.mode = COMMAND_EXEC,
+		.usage = "['enable'|'disable']",
+		.help = "activate support for semihosting resumable exit",
 	},
 	COMMAND_REGISTRATION_DONE
 };
-
-const struct command_registration arm_all_profiles_command_handlers[] = {
-	{
-		.name = "core_state",
-		.handler = handle_arm_core_state_command,
-		.mode = COMMAND_EXEC,
-		.usage = "['arm'|'thumb']",
-		.help = "display/change ARM core state",
-	},
-	{
-		.name = "disassemble",
-		.handler = handle_arm_disassemble_command,
-		.mode = COMMAND_EXEC,
-		.usage = "address [count ['thumb']]",
-		.help = "disassemble instructions",
-	},
-	{
-		.chain = semihosting_common_handlers,
-	},
-	COMMAND_REGISTRATION_DONE
-};
-
 const struct command_registration arm_command_handlers[] = {
 	{
 		.name = "arm",
@@ -1219,18 +1222,10 @@ int arm_get_gdb_reg_list(struct target *target,
 		(*reg_list)[25] = arm->cpsr;
 
 		return ERROR_OK;
+		break;
 
 	case REG_CLASS_ALL:
-		switch (arm->core_type) {
-			case ARM_CORE_TYPE_SEC_EXT:
-				*reg_list_size = 51;
-				break;
-			case ARM_CORE_TYPE_VIRT_EXT:
-				*reg_list_size = 53;
-				break;
-			default:
-				*reg_list_size = 48;
-		}
+		*reg_list_size = (arm->core_type != ARM_MODE_MON ? 48 : 51);
 		unsigned int list_size_core = *reg_list_size;
 		if (arm->arm_vfp_version == ARM_VFP_V3)
 			*reg_list_size += 33;
@@ -1242,15 +1237,9 @@ int arm_get_gdb_reg_list(struct target *target,
 
 		for (i = 13; i < ARRAY_SIZE(arm_core_regs); i++) {
 				int reg_index = arm->core_cache->reg_list[i].number;
-
-				if (arm_core_regs[i].mode == ARM_MODE_MON
-					&& arm->core_type != ARM_CORE_TYPE_SEC_EXT
-					&& arm->core_type != ARM_CORE_TYPE_VIRT_EXT)
-					continue;
-				if (arm_core_regs[i].mode == ARM_MODE_HYP
-					&& arm->core_type != ARM_CORE_TYPE_VIRT_EXT)
-					continue;
-				(*reg_list)[reg_index] = &(arm->core_cache->reg_list[i]);
+				if (!(arm_core_regs[i].mode == ARM_MODE_MON
+						&& arm->core_type != ARM_MODE_MON))
+					(*reg_list)[reg_index] = &(arm->core_cache->reg_list[i]);
 		}
 
 		/* When we supply the target description, there is no need for fake FPA */
@@ -1268,10 +1257,12 @@ int arm_get_gdb_reg_list(struct target *target,
 		}
 
 		return ERROR_OK;
+		break;
 
 	default:
 		LOG_ERROR("not a valid register class type in query.");
 		return ERROR_FAIL;
+		break;
 	}
 }
 
@@ -1343,7 +1334,7 @@ int armv4_5_run_algorithm_inner(struct target *target,
 	}
 
 	/* armv5 and later can terminate with BKPT instruction; less overhead */
-	if (!exit_point && arm->arch == ARM_ARCH_V4) {
+	if (!exit_point && arm->is_armv4) {
 		LOG_ERROR("ARMv4 target needs HW breakpoint location");
 		return ERROR_FAIL;
 	}
@@ -1376,7 +1367,7 @@ int armv4_5_run_algorithm_inner(struct target *target,
 		if (reg_params[i].direction == PARAM_IN)
 			continue;
 
-		struct reg *reg = register_get_by_name(arm->core_cache, reg_params[i].reg_name, false);
+		struct reg *reg = register_get_by_name(arm->core_cache, reg_params[i].reg_name, 0);
 		if (!reg) {
 			LOG_ERROR("BUG: register '%s' not found", reg_params[i].reg_name);
 			return ERROR_COMMAND_SYNTAX_ERROR;
@@ -1448,7 +1439,7 @@ int armv4_5_run_algorithm_inner(struct target *target,
 
 			struct reg *reg = register_get_by_name(arm->core_cache,
 					reg_params[i].reg_name,
-					false);
+					0);
 			if (!reg) {
 				LOG_ERROR("BUG: register '%s' not found", reg_params[i].reg_name);
 				retval = ERROR_COMMAND_SYNTAX_ERROR;
@@ -1564,7 +1555,7 @@ int arm_checksum_memory(struct target *target,
 	int timeout = 20000 * (1 + (count / (1024 * 1024)));
 
 	/* armv4 must exit using a hardware breakpoint */
-	if (arm->arch == ARM_ARCH_V4)
+	if (arm->is_armv4)
 		exit_var = crc_algorithm->address + sizeof(arm_crc_code_le) - 8;
 
 	retval = target_run_algorithm(target, 0, NULL, 2, reg_params,
@@ -1645,7 +1636,7 @@ int arm_blank_check_memory(struct target *target,
 	buf_set_u32(reg_params[2].value, 0, 32, erased_value);
 
 	/* armv4 must exit using a hardware breakpoint */
-	if (arm->arch == ARM_ARCH_V4)
+	if (arm->is_armv4)
 		exit_var = check_algorithm->address + sizeof(check_code_le) - 4;
 
 	retval = target_run_algorithm(target, 0, NULL, 3, reg_params,
@@ -1677,7 +1668,7 @@ static int arm_full_context(struct target *target)
 	int retval = ERROR_OK;
 
 	for (; num_regs && retval == ERROR_OK; num_regs--, reg++) {
-		if (!reg->exist || reg->valid)
+		if (reg->valid)
 			continue;
 		retval = armv4_5_get_core_reg(reg);
 	}
@@ -1686,7 +1677,7 @@ static int arm_full_context(struct target *target)
 
 static int arm_default_mrc(struct target *target, int cpnum,
 	uint32_t op1, uint32_t op2,
-	uint32_t crn, uint32_t crm,
+	uint32_t CRn, uint32_t CRm,
 	uint32_t *value)
 {
 	LOG_ERROR("%s doesn't implement MRC", target_type_name(target));
@@ -1695,7 +1686,7 @@ static int arm_default_mrc(struct target *target, int cpnum,
 
 static int arm_default_mcr(struct target *target, int cpnum,
 	uint32_t op1, uint32_t op2,
-	uint32_t crn, uint32_t crm,
+	uint32_t CRn, uint32_t CRm,
 	uint32_t value)
 {
 	LOG_ERROR("%s doesn't implement MCR", target_type_name(target));
@@ -1710,8 +1701,8 @@ int arm_init_arch_info(struct target *target, struct arm *arm)
 	arm->common_magic = ARM_COMMON_MAGIC;
 
 	/* core_type may be overridden by subtype logic */
-	if (arm->core_type != ARM_CORE_TYPE_M_PROFILE) {
-		arm->core_type = ARM_CORE_TYPE_STD;
+	if (arm->core_type != ARM_MODE_THREAD) {
+		arm->core_type = ARM_MODE_ANY;
 		arm_set_cpsr(arm, ARM_MODE_USR);
 	}
 

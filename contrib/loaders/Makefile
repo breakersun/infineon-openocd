@@ -1,5 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-or-later
-
 .PHONY: arm clean-arm
 
 all: arm stm8
@@ -16,6 +14,7 @@ arm_dirs = \
 	flash/kinetis_ke \
 	flash/max32xxx \
 	flash/xmc1xxx \
+	flash/flm/cypress/psoc6/CY8C6xxx_SMIF \
 	debug/xscale
 
 arm:

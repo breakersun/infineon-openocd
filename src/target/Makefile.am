@@ -1,11 +1,12 @@
-# SPDX-License-Identifier: GPL-2.0-or-later
+if OOCD_TRACE
+OOCD_TRACE_FILES = %D%/oocd_trace.c
+else
+OOCD_TRACE_FILES =
+endif
 
 %C%_libtarget_la_LIBADD = %D%/openrisc/libopenrisc.la \
-	%D%/riscv/libriscv.la \
-	%D%/xtensa/libxtensa.la \
-	%D%/espressif/libespressif.la
+	%D%/riscv/libriscv.la
 
-%C%_libtarget_la_CPPFLAGS = $(AM_CPPFLAGS)
 
 STARTUP_TCL_SRCS += %D%/startup.tcl
 
@@ -23,22 +24,19 @@ noinst_LTLIBRARIES += %D%/libtarget.la
 	$(STM8_SRC) \
 	$(INTEL_IA32_SRC) \
 	$(ESIRISC_SRC) \
-        $(ARC_SRC) \
 	%D%/avrt.c \
 	%D%/dsp563xx.c \
 	%D%/dsp563xx_once.c \
 	%D%/dsp5680xx.c \
-	%D%/hla_target.c \
-	$(ARMV8_SRC) \
-	$(MIPS64_SRC)
+	%D%/hla_target.c
 
-if HAVE_CAPSTONE
-%C%_libtarget_la_CPPFLAGS += $(CAPSTONE_CFLAGS)
-%C%_libtarget_la_LIBADD += $(CAPSTONE_LIBS)
+if TARGET64
+%C%_libtarget_la_SOURCES +=$(ARMV8_SRC)
 endif
 
 TARGET_CORE_SRC = \
 	%D%/algorithm.c \
+	%D%/cmsis_algorithm.c \
 	%D%/register.c \
 	%D%/image.c \
 	%D%/breakpoints.c \
@@ -46,8 +44,7 @@ TARGET_CORE_SRC = \
 	%D%/target_request.c \
 	%D%/testee.c \
 	%D%/semihosting_common.c \
-	%D%/smp.c \
-	%D%/rtt.c
+	%D%/smp.c
 
 ARMV4_5_SRC = \
 	%D%/armv4_5.c \
@@ -88,7 +85,6 @@ ARMV8_SRC = \
 	%D%/armv8_dpm.c \
 	%D%/armv8_opcodes.c \
 	%D%/aarch64.c \
-	%D%/a64_disassembler.c \
 	%D%/armv8.c \
 	%D%/armv8_cache.c
 
@@ -102,15 +98,14 @@ ARM_DEBUG_SRC = \
 	%D%/arm_dap.c \
 	%D%/armv7a_cache.c \
 	%D%/armv7a_cache_l2x.c \
-	%D%/adi_v5_dapdirect.c \
 	%D%/adi_v5_jtag.c \
 	%D%/adi_v5_swd.c \
 	%D%/embeddedice.c \
 	%D%/trace.c \
 	%D%/etb.c \
 	%D%/etm.c \
+	$(OOCD_TRACE_FILES) \
 	%D%/etm_dummy.c \
-	%D%/arm_tpiu_swo.c \
 	%D%/arm_cti.c
 
 AVR32_SRC = \
@@ -124,14 +119,6 @@ MIPS32_SRC = \
 	%D%/mips_m4k.c \
 	%D%/mips32_pracc.c \
 	%D%/mips32_dmaacc.c \
-	%D%/mips_ejtag.c
-
-MIPS64_SRC = \
-	%D%/mips64.c \
-	%D%/mips32_pracc.c \
-	%D%/mips64_pracc.c \
-	%D%/mips_mips64.c \
-	%D%/trace.c \
 	%D%/mips_ejtag.c
 
 NDS32_SRC = \
@@ -160,16 +147,10 @@ ESIRISC_SRC = \
 	%D%/esirisc_jtag.c \
 	%D%/esirisc_trace.c
 
-ARC_SRC = \
-        %D%/arc.c \
-        %D%/arc_cmd.c \
-        %D%/arc_jtag.c \
-        %D%/arc_mem.c
-
 %C%_libtarget_la_SOURCES += \
 	%D%/algorithm.h \
+	%D%/cmsis_algorithm.h \
 	%D%/arm.h \
-	%D%/arm_coresight.h \
 	%D%/arm_dpm.h \
 	%D%/arm_jtag.h \
 	%D%/arm_adi_v5.h \
@@ -177,7 +158,6 @@ ARC_SRC = \
 	%D%/armv7a_cache_l2x.h \
 	%D%/armv7a_mmu.h \
 	%D%/arm_disassembler.h \
-	%D%/a64_disassembler.h \
 	%D%/arm_opcodes.h \
 	%D%/arm_simulator.h \
 	%D%/arm_semihosting.h \
@@ -213,16 +193,13 @@ ARC_SRC = \
 	%D%/etb.h \
 	%D%/etm.h \
 	%D%/etm_dummy.h \
-	%D%/arm_tpiu_swo.h \
 	%D%/image.h \
 	%D%/mips32.h \
-	%D%/mips64.h \
 	%D%/mips_m4k.h \
-	%D%/mips_mips64.h \
 	%D%/mips_ejtag.h \
 	%D%/mips32_pracc.h \
 	%D%/mips32_dmaacc.h \
-	%D%/mips64_pracc.h \
+	%D%/oocd_trace.h \
 	%D%/register.h \
 	%D%/target.h \
 	%D%/target_type.h \
@@ -255,14 +232,7 @@ ARC_SRC = \
 	%D%/esirisc.h \
 	%D%/esirisc_jtag.h \
 	%D%/esirisc_regs.h \
-	%D%/esirisc_trace.h \
-	%D%/arc.h \
-	%D%/arc_cmd.h \
-	%D%/arc_jtag.h \
-	%D%/arc_mem.h \
-	%D%/rtt.h
+	%D%/esirisc_trace.h
 
 include %D%/openrisc/Makefile.am
 include %D%/riscv/Makefile.am
-include %D%/xtensa/Makefile.am
-include %D%/espressif/Makefile.am

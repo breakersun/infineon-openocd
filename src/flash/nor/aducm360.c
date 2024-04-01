@@ -1,8 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2015 by Ivan Buliev                                     *
  *   i.buliev@mikrosistemi.com                                             *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 /***************************************************************************
@@ -74,12 +85,13 @@ FLASH_BANK_COMMAND_HANDLER(aducm360_flash_bank_command)
 /* ----------------------------------------------------------------------- */
 static int aducm360_build_sector_list(struct flash_bank *bank)
 {
+	int i = 0;
 	uint32_t offset = 0;
 
 	/* sector size is 512 */
 	bank->num_sectors = bank->size / FLASH_SECTOR_SIZE;
 	bank->sectors = malloc(sizeof(struct flash_sector) * bank->num_sectors);
-	for (unsigned i = 0; i < bank->num_sectors; ++i) {
+	for (i = 0; i < bank->num_sectors; ++i) {
 		bank->sectors[i].offset = offset;
 		bank->sectors[i].size = FLASH_SECTOR_SIZE;
 		offset += bank->sectors[i].size;
@@ -152,8 +164,7 @@ static int aducm360_page_erase(struct target *target, uint32_t padd)
 }
 
 /* ----------------------------------------------------------------------- */
-static int aducm360_erase(struct flash_bank *bank, unsigned int first,
-		unsigned int last)
+static int aducm360_erase(struct flash_bank *bank, int first, int last)
 {
 	int             res = ERROR_OK;
 	int             i;
@@ -274,7 +285,7 @@ static int aducm360_write_block_sync(
 
 		res = buf_get_u32(reg_params[4].value, 0, 32);
 		if (res) {
-			LOG_ERROR("aducm360 fast sync algorithm reports an error (%02" PRIX32 ")", res);
+			LOG_ERROR("aducm360 fast sync algorithm reports an error (%02X)", res);
 			retval = ERROR_FAIL;
 			break;
 		}
@@ -390,7 +401,7 @@ static int aducm360_write_block_async(
 	} else {
 		res = buf_get_u32(reg_params[4].value, 0, 32);	/*RESULT*/
 		if (res) {
-			LOG_ERROR("aducm360 fast async algorithm reports an error (%02" PRIX32 ")", res);
+			LOG_ERROR("aducm360 fast async algorithm reports an error (%02X)", res);
 			retval = ERROR_FAIL;
 		}
 	}
@@ -423,8 +434,10 @@ static int aducm360_write_block(struct flash_bank *bank,
 	switch (choice) {
 	case 0:
 		return aducm360_write_block_sync(bank, buffer, offset, count);
+		break;
 	case 1:
 		return aducm360_write_block_async(bank, buffer, offset, count);
+		break;
 	default:
 		LOG_ERROR("aducm360_write_block was cancelled (no writing method was chosen)!");
 		return ERROR_TARGET_RESOURCE_NOT_AVAILABLE;

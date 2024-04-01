@@ -1,7 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /*
  * Copyright (C) 2009 by David Brownell
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
 
 #ifdef HAVE_CONFIG_H
@@ -244,11 +253,11 @@ static int dpmv8_exec_opcode(struct arm_dpm *dpm,
 	/* update dscr and el after each command execution */
 	dpm->dscr = dscr;
 	if (dpm->last_el != ((dscr >> 8) & 3))
-		LOG_DEBUG("EL %i -> %" PRIu32, dpm->last_el, (dscr >> 8) & 3);
+		LOG_DEBUG("EL %i -> %i", dpm->last_el, (dscr >> 8) & 3);
 	dpm->last_el = (dscr >> 8) & 3;
 
 	if (dscr & DSCR_ERR) {
-		LOG_ERROR("Opcode 0x%08" PRIx32 ", DSCR.ERR=1, DSCR.EL=%i", opcode, dpm->last_el);
+		LOG_ERROR("Opcode 0x%08"PRIx32", DSCR.ERR=1, DSCR.EL=%i", opcode, dpm->last_el);
 		armv8_dpm_handle_exception(dpm, true);
 		retval = ERROR_FAIL;
 	}
@@ -481,7 +490,7 @@ static int dpmv8_bpwp_disable(struct arm_dpm *dpm, unsigned index_t)
 
 /* Read coprocessor */
 static int dpmv8_mrc(struct target *target, int cpnum,
-	uint32_t op1, uint32_t op2, uint32_t crn, uint32_t crm,
+	uint32_t op1, uint32_t op2, uint32_t CRn, uint32_t CRm,
 	uint32_t *value)
 {
 	struct arm *arm = target_to_arm(target);
@@ -493,12 +502,12 @@ static int dpmv8_mrc(struct target *target, int cpnum,
 		return retval;
 
 	LOG_DEBUG("MRC p%d, %d, r0, c%d, c%d, %d", cpnum,
-		(int) op1, (int) crn,
-		(int) crm, (int) op2);
+		(int) op1, (int) CRn,
+		(int) CRm, (int) op2);
 
 	/* read coprocessor register into R0; return via DCC */
 	retval = dpm->instr_read_data_r0(dpm,
-			ARMV4_5_MRC(cpnum, op1, 0, crn, crm, op2),
+			ARMV4_5_MRC(cpnum, op1, 0, CRn, CRm, op2),
 			value);
 
 	/* (void) */ dpm->finish(dpm);
@@ -506,7 +515,7 @@ static int dpmv8_mrc(struct target *target, int cpnum,
 }
 
 static int dpmv8_mcr(struct target *target, int cpnum,
-	uint32_t op1, uint32_t op2, uint32_t crn, uint32_t crm,
+	uint32_t op1, uint32_t op2, uint32_t CRn, uint32_t CRm,
 	uint32_t value)
 {
 	struct arm *arm = target_to_arm(target);
@@ -518,12 +527,12 @@ static int dpmv8_mcr(struct target *target, int cpnum,
 		return retval;
 
 	LOG_DEBUG("MCR p%d, %d, r0, c%d, c%d, %d", cpnum,
-		(int) op1, (int) crn,
-		(int) crm, (int) op2);
+		(int) op1, (int) CRn,
+		(int) CRm, (int) op2);
 
 	/* read DCC into r0; then write coprocessor register from R0 */
 	retval = dpm->instr_write_data_r0(dpm,
-			ARMV4_5_MCR(cpnum, op1, 0, crn, crm, op2),
+			ARMV4_5_MCR(cpnum, op1, 0, CRn, CRm, op2),
 			value);
 
 	/* (void) */ dpm->finish(dpm);
@@ -551,7 +560,7 @@ int armv8_dpm_modeswitch(struct arm_dpm *dpm, enum arm_mode mode)
 		LOG_DEBUG("restoring mode, cpsr = 0x%08"PRIx32, cpsr);
 
 	} else {
-		LOG_DEBUG("setting mode 0x%x", mode);
+		LOG_DEBUG("setting mode 0x%"PRIx32, mode);
 		cpsr = mode;
 	}
 
@@ -601,7 +610,7 @@ int armv8_dpm_modeswitch(struct arm_dpm *dpm, enum arm_mode mode)
 				/* load SPSR with the desired mode and execute DRPS */
 				LOG_DEBUG("SPSR = 0x%08"PRIx32, cpsr);
 				retval = dpm->instr_write_data_r0(dpm,
-						ARMV8_MSR_GP_XPSR_T1(1, 0, 15), cpsr);
+						ARMV8_MSR_GP_xPSR_T1(1, 0, 15), cpsr);
 				if (retval == ERROR_OK)
 					retval = dpm->instr_execute(dpm, armv8_opcode(armv8, ARMV8_OPC_DRPS));
 			}
@@ -672,10 +681,6 @@ static int dpmv8_read_reg(struct arm_dpm *dpm, struct reg *r, unsigned regnum)
 			LOG_DEBUG("READ: %s, hvalue=%16.8llx", r->name, (unsigned long long) hvalue);
 		}
 	}
-
-	if (retval != ERROR_OK)
-		LOG_ERROR("Failed to read %s register", r->name);
-
 	return retval;
 }
 
@@ -715,14 +720,11 @@ static int dpmv8_write_reg(struct arm_dpm *dpm, struct reg *r, unsigned regnum)
 		}
 	}
 
-	if (retval != ERROR_OK)
-		LOG_ERROR("Failed to write %s register", r->name);
-
 	return retval;
 }
 
 /**
- * Read basic registers of the current context:  R0 to R15, and CPSR;
+ * Read basic registers of the the current context:  R0 to R15, and CPSR;
  * sets the core mode (such as USR or IRQ) and state (such as ARM or Thumb).
  * In normal operation this is called on entry to halting debug state,
  * possibly after some other operations supporting restore of debug state
@@ -773,7 +775,7 @@ int armv8_dpm_read_current_registers(struct arm_dpm *dpm)
 		struct arm_reg *arm_reg;
 
 		r = armv8_reg_current(arm, i);
-		if (!r->exist || r->valid)
+		if (r->valid)
 			continue;
 
 		/* Skip reading FP-SIMD registers */
@@ -809,7 +811,7 @@ fail:
  * or running debugger code.
  */
 static int dpmv8_maybe_update_bpwp(struct arm_dpm *dpm, bool bpwp,
-	struct dpm_bpwp *xp, bool *set_p)
+	struct dpm_bpwp *xp, int *set_p)
 {
 	int retval = ERROR_OK;
 	bool disable;
@@ -883,7 +885,7 @@ int armv8_dpm_write_dirty_registers(struct arm_dpm *dpm, bool bpwp)
 			struct breakpoint *bp = dbp->bp;
 
 			retval = dpmv8_maybe_update_bpwp(dpm, bpwp, &dbp->bpwp,
-					bp ? &bp->is_set : NULL);
+					bp ? &bp->set : NULL);
 			if (retval != ERROR_OK)
 				goto done;
 		}
@@ -895,7 +897,7 @@ int armv8_dpm_write_dirty_registers(struct arm_dpm *dpm, bool bpwp)
 		struct watchpoint *wp = dwp->wp;
 
 		retval = dpmv8_maybe_update_bpwp(dpm, bpwp, &dwp->bpwp,
-				wp ? &wp->is_set : NULL);
+				wp ? &wp->set : NULL);
 		if (retval != ERROR_OK)
 			goto done;
 	}
@@ -913,11 +915,8 @@ int armv8_dpm_write_dirty_registers(struct arm_dpm *dpm, bool bpwp)
 	for (unsigned i = 1; i < cache->num_regs; i++) {
 		struct arm_reg *r;
 
-		/* skip non-existent */
-		if (!cache->reg_list[i].exist)
-			continue;
 		/* skip PC and CPSR */
-		if (i == ARMV8_PC || i == ARMV8_XPSR)
+		if (i == ARMV8_PC || i == ARMV8_xPSR)
 			continue;
 		/* skip invalid */
 		if (!cache->reg_list[i].valid)
@@ -939,7 +938,7 @@ int armv8_dpm_write_dirty_registers(struct arm_dpm *dpm, bool bpwp)
 
 	/* flush CPSR and PC */
 	if (retval == ERROR_OK)
-		retval = dpmv8_write_reg(dpm, &cache->reg_list[ARMV8_XPSR], ARMV8_XPSR);
+		retval = dpmv8_write_reg(dpm, &cache->reg_list[ARMV8_xPSR], ARMV8_xPSR);
 	if (retval == ERROR_OK)
 		retval = dpmv8_write_reg(dpm, &cache->reg_list[ARMV8_PC], ARMV8_PC);
 	/* flush R0 -- it's *very* dirty by now */
@@ -1041,7 +1040,7 @@ static int armv8_dpm_full_context(struct target *target)
 		for (unsigned i = 0; i < cache->num_regs; i++) {
 			struct arm_reg *r;
 
-			if (!cache->reg_list[i].exist || cache->reg_list[i].valid)
+			if (cache->reg_list[i].valid)
 				continue;
 			r = cache->reg_list[i].arch_info;
 
@@ -1273,6 +1272,27 @@ static int dpmv8_remove_watchpoint(struct target *target, struct watchpoint *wp)
 	return retval;
 }
 
+void armv8_dpm_report_wfar(struct arm_dpm *dpm, uint64_t addr)
+{
+	switch (dpm->arm->core_state) {
+		case ARM_STATE_ARM:
+		case ARM_STATE_AARCH64:
+			addr -= 8;
+			break;
+		case ARM_STATE_THUMB:
+		case ARM_STATE_THUMB_EE:
+			addr -= 4;
+			break;
+		case ARM_STATE_JAZELLE:
+			/* ?? */
+			break;
+		default:
+			LOG_DEBUG("Unknown core_state");
+			break;
+	}
+	dpm->wp_pc = addr;
+}
+
 /*
  * Handle exceptions taken in debug state. This happens mostly for memory
  * accesses that violated a MMU policy. Taking an exception while in debug
@@ -1293,9 +1313,9 @@ void armv8_dpm_handle_exception(struct arm_dpm *dpm, bool do_restore)
 	unsigned int el;
 
 	static const int clobbered_regs_by_el[3][5] = {
-		{ ARMV8_PC, ARMV8_XPSR, ARMV8_ELR_EL1, ARMV8_ESR_EL1, ARMV8_SPSR_EL1 },
-		{ ARMV8_PC, ARMV8_XPSR, ARMV8_ELR_EL2, ARMV8_ESR_EL2, ARMV8_SPSR_EL2 },
-		{ ARMV8_PC, ARMV8_XPSR, ARMV8_ELR_EL3, ARMV8_ESR_EL3, ARMV8_SPSR_EL3 },
+		{ ARMV8_PC, ARMV8_xPSR, ARMV8_ELR_EL1, ARMV8_ESR_EL1, ARMV8_SPSR_EL1 },
+		{ ARMV8_PC, ARMV8_xPSR, ARMV8_ELR_EL2, ARMV8_ESR_EL2, ARMV8_SPSR_EL2 },
+		{ ARMV8_PC, ARMV8_xPSR, ARMV8_ELR_EL3, ARMV8_ESR_EL3, ARMV8_SPSR_EL3 },
 	};
 
 	el = (dpm->dscr >> 8) & 3;
@@ -1310,7 +1330,7 @@ void armv8_dpm_handle_exception(struct arm_dpm *dpm, bool do_restore)
 	mem_ap_write_u32(armv8->debug_ap,
 		armv8->debug_base + CPUV8_DBG_DRCR, DRCR_CSE);
 
-	armv8->read_reg_u64(armv8, ARMV8_XPSR, &dlr);
+	armv8->read_reg_u64(armv8, ARMV8_xPSR, &dlr);
 	dspsr = dlr;
 	armv8->read_reg_u64(armv8, ARMV8_PC, &dlr);
 
@@ -1401,7 +1421,7 @@ int armv8_dpm_setup(struct arm_dpm *dpm)
 	arm->read_core_reg = armv8_dpm_read_core_reg;
 	arm->write_core_reg = armv8_dpm_write_core_reg;
 
-	if (!arm->core_cache) {
+	if (arm->core_cache == NULL) {
 		cache = armv8_build_reg_cache(target);
 		if (!cache)
 			return ERROR_FAIL;
@@ -1438,18 +1458,16 @@ int armv8_dpm_setup(struct arm_dpm *dpm)
 	}
 
 	/* watchpoint setup */
-	if (!target->type->add_watchpoint) {
-		target->type->add_watchpoint = dpmv8_add_watchpoint;
-		target->type->remove_watchpoint = dpmv8_remove_watchpoint;
-	}
+	target->type->add_watchpoint = dpmv8_add_watchpoint;
+	target->type->remove_watchpoint = dpmv8_remove_watchpoint;
 
 	/* FIXME add vector catch support */
 
 	dpm->nbp = 1 + ((dpm->didr >> 12) & 0xf);
-	dpm->dbp = calloc(dpm->nbp, sizeof(*dpm->dbp));
+	dpm->dbp = calloc(dpm->nbp, sizeof *dpm->dbp);
 
 	dpm->nwp = 1 + ((dpm->didr >> 20) & 0xf);
-	dpm->dwp = calloc(dpm->nwp, sizeof(*dpm->dwp));
+	dpm->dwp = calloc(dpm->nwp, sizeof *dpm->dwp);
 
 	if (!dpm->dbp || !dpm->dwp) {
 		free(dpm->dbp);

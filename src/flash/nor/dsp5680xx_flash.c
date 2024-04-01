@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2011 by Rodrigo L. Rosa                                 *
  *   rodrigorosa.LG@gmail.com                                              *
@@ -8,6 +6,19 @@
  *   Kevin McGuire                                                         *
  *   Marcel Wijlaars                                                       *
  *   Michael Ashton                                                        *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 /**
@@ -34,11 +45,15 @@
 
 static int dsp5680xx_build_sector_list(struct flash_bank *bank)
 {
-	bank->sectors = malloc(sizeof(struct flash_sector) * bank->num_sectors);
+	uint32_t offset = HFM_FLASH_BASE_ADDR;
 
-	for (unsigned int i = 0; i < bank->num_sectors; ++i) {
+	bank->sectors = malloc(sizeof(struct flash_sector) * bank->num_sectors);
+	int i;
+
+	for (i = 0; i < bank->num_sectors; ++i) {
 		bank->sectors[i].offset = i * HFM_SECTOR_SIZE;
 		bank->sectors[i].size = HFM_SECTOR_SIZE;
+		offset += bank->sectors[i].size;
 		bank->sectors[i].is_erased = -1;
 		bank->sectors[i].is_protected = -1;
 	}
@@ -93,7 +108,7 @@ static int dsp5680xx_flash_protect_check(struct flash_bank *bank)
 }
 
 /**
- * Protection functionality is not implemented.
+ * Protection funcionality is not implemented.
  * The current implementation applies/removes security on the chip.
  * The chip is effectively secured/unsecured after the first reset
  * following the execution of this function.
@@ -105,8 +120,8 @@ static int dsp5680xx_flash_protect_check(struct flash_bank *bank)
  *
  * @return
  */
-static int dsp5680xx_flash_protect(struct flash_bank *bank, int set,
-		unsigned int first, unsigned int last)
+static int dsp5680xx_flash_protect(struct flash_bank *bank, int set, int first,
+				   int last)
 {
 /**
  * This applies security to flash module after next reset, it does
@@ -116,9 +131,15 @@ static int dsp5680xx_flash_protect(struct flash_bank *bank, int set,
 
 	if (set)
 		retval = dsp5680xx_f_lock(bank->target);
-	else
+	else {
 		retval = dsp5680xx_f_unlock(bank->target);
-
+		if (retval == ERROR_OK) {
+			/* mark all as erased */
+			for (int i = 0; i <= (HFM_SECTOR_COUNT - 1); i++)
+				/* FM does not recognize it as erased if erased via JTAG. */
+				bank->sectors[i].is_erased = 1;
+		}
+	}
 	return retval;
 }
 
@@ -133,9 +154,11 @@ static int dsp5680xx_flash_protect(struct flash_bank *bank, int set,
  *
  * @return
  */
-static int dsp5680xx_flash_write(struct flash_bank *bank, const uint8_t *buffer,
+static int dsp5680xx_flash_write(struct flash_bank *bank, const uint8_t* buffer,
 				 uint32_t offset, uint32_t count)
 {
+	int retval;
+
 	if ((offset + count / 2) > bank->size) {
 		LOG_ERROR("%s: Flash bank cannot fit data.", __func__);
 		return ERROR_FAIL;
@@ -149,7 +172,17 @@ static int dsp5680xx_flash_write(struct flash_bank *bank, const uint8_t *buffer,
 		LOG_ERROR("%s: Writing to odd addresses not supported for this target", __func__);
 		return ERROR_FAIL;
 	}
-	return dsp5680xx_f_wr(bank->target, buffer, bank->base + offset / 2, count, 0);
+	retval = dsp5680xx_f_wr(bank->target, buffer, bank->base + offset / 2, count, 0);
+	uint32_t addr_word;
+
+	for (addr_word = bank->base + offset / 2; addr_word < count / 2;
+			addr_word += (HFM_SECTOR_SIZE / 2)) {
+		if (retval == ERROR_OK)
+			bank->sectors[addr_word / (HFM_SECTOR_SIZE / 2)].is_erased = 0;
+		else
+			bank->sectors[addr_word / (HFM_SECTOR_SIZE / 2)].is_erased = -1;
+	}
+	return retval;
 }
 
 static int dsp5680xx_probe(struct flash_bank *bank)
@@ -161,8 +194,8 @@ static int dsp5680xx_probe(struct flash_bank *bank)
 /**
  * The flash module (FM) on the dsp5680xx supports both individual sector
  * and mass erase of the flash memory.
- * If this function is called with @a first == @a last == 0 or if @a first is the
- * first sector (#0) and @a last is the last sector then the mass erase command
+ * If this function is called with @first == @last == 0 or if @first is the
+ * first sector (#0) and @last is the last sector then the mass erase command
  * is executed (much faster than erasing each sector individually).
  *
  * @param bank
@@ -171,10 +204,24 @@ static int dsp5680xx_probe(struct flash_bank *bank)
  *
  * @return
  */
-static int dsp5680xx_flash_erase(struct flash_bank *bank, unsigned int first,
-		unsigned int last)
+static int dsp5680xx_flash_erase(struct flash_bank *bank, int first, int last)
 {
-	return dsp5680xx_f_erase(bank->target, (uint32_t) first, (uint32_t) last);
+	int retval;
+
+	retval = dsp5680xx_f_erase(bank->target, (uint32_t) first, (uint32_t) last);
+	if ((!(first | last)) || ((first == 0) && (last == (HFM_SECTOR_COUNT - 1))))
+		last = HFM_SECTOR_COUNT - 1;
+	if (retval == ERROR_OK)
+		for (int i = first; i <= last; i++)
+			bank->sectors[i].is_erased = 1;
+	else
+		/**
+		 * If an error occurred unknown status
+		 *is set even though some sector could have been correctly erased.
+		 */
+		for (int i = first; i <= last; i++)
+			bank->sectors[i].is_erased = -1;
+	return retval;
 }
 
 /**
@@ -194,14 +241,16 @@ static int dsp5680xx_flash_erase_check(struct flash_bank *bank)
 	uint32_t i;
 
 	for (i = 0; i < HFM_SECTOR_COUNT; i++) {
-		retval = dsp5680xx_f_erase_check(bank->target, &erased, i);
-		if (retval != ERROR_OK) {
-			bank->sectors[i].is_erased = -1;
-		} else {
-			if (erased)
-				bank->sectors[i].is_erased = 1;
-			else
-				bank->sectors[i].is_erased = 0;
+		if (bank->sectors[i].is_erased == -1) {
+			retval = dsp5680xx_f_erase_check(bank->target, &erased, i);
+			if (retval != ERROR_OK) {
+				bank->sectors[i].is_erased = -1;
+			} else {
+				if (erased)
+					bank->sectors[i].is_erased = 1;
+				else
+					bank->sectors[i].is_erased = 0;
+			}
 		}
 	}
 	return retval;

@@ -1,5 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
-
 /*
  * Copyright (C) 2005 by Dominic Rath
  * Dominic.Rath@gmx.de
@@ -12,6 +10,19 @@
  *
  * Copyright (C) 2018 by Liviu Ionescu
  *   <ilg@livius.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #ifndef OPENOCD_TARGET_ARM_H
@@ -28,35 +39,6 @@
  * and mode model are supported.  The Thumb2-only microcontroller profile
  * support has not yet been integrated, affecting Cortex-M parts.
  */
-
-/**
- * Indicates what registers are in the ARM state core register set.
- *
- * - ARM_CORE_TYPE_STD indicates the standard set of 37 registers, seen
- *   on for example ARM7TDMI cores.
- * - ARM_CORE_TYPE_SEC_EXT indicates core has security extensions, thus
- *   three more registers are shadowed for "Secure Monitor" mode.
- * - ARM_CORE_TYPE_VIRT_EXT indicates core has virtualization extensions
- *   and also security extensions. Additional shadowed registers for
- *   "Secure Monitor" and "Hypervisor" modes.
- * - ARM_CORE_TYPE_M_PROFILE indicates a microcontroller profile core,
- *   which only shadows SP.
- */
-enum arm_core_type {
-	ARM_CORE_TYPE_STD = -1,
-	ARM_CORE_TYPE_SEC_EXT = 1,
-	ARM_CORE_TYPE_VIRT_EXT,
-	ARM_CORE_TYPE_M_PROFILE,
-};
-
-/** ARM Architecture specifying the version and the profile */
-enum arm_arch {
-	ARM_ARCH_UNKNOWN,
-	ARM_ARCH_V4,
-	ARM_ARCH_V6M,
-	ARM_ARCH_V7M,
-	ARM_ARCH_V8M,
-};
 
 /**
  * Represent state of an ARM core.
@@ -78,7 +60,6 @@ enum arm_mode {
 	ARM_MODE_SVC = 19,
 	ARM_MODE_MON = 22,
 	ARM_MODE_ABT = 23,
-	ARM_MODE_HYP = 26,
 	ARM_MODE_UND = 27,
 	ARM_MODE_1176_MON = 28,
 	ARM_MODE_SYS = 31,
@@ -155,7 +136,7 @@ enum arm_vfp_version {
 	ARM_VFP_V3,
 };
 
-#define ARM_COMMON_MAGIC 0x0A450A45U
+#define ARM_COMMON_MAGIC 0x0A450A45
 
 /**
  * Represents a generic ARM core, with standard application registers.
@@ -165,8 +146,7 @@ enum arm_vfp_version {
  * registers as traditional ARM cores, and only support Thumb2 instructions.
  */
 struct arm {
-	unsigned int common_magic;
-
+	int common_magic;
 	struct reg_cache *core_cache;
 
 	/** Handle to the PC; valid in all core modes. */
@@ -181,8 +161,15 @@ struct arm {
 	/** Support for arm_reg_current() */
 	const int *map;
 
-	/** Indicates what registers are in the ARM state core register set. */
-	enum arm_core_type core_type;
+	/**
+	 * Indicates what registers are in the ARM state core register set.
+	 * ARM_MODE_ANY indicates the standard set of 37 registers,
+	 * seen on for example ARM7TDMI cores.  ARM_MODE_MON indicates three
+	 * more registers are shadowed, for "Secure Monitor" mode.
+	 * ARM_MODE_THREAD indicates a microcontroller profile core,
+	 * which only shadows SP.
+	 */
+	enum arm_mode core_type;
 
 	/** Record the current core mode: SVC, USR, or some other mode. */
 	enum arm_mode core_mode;
@@ -190,8 +177,11 @@ struct arm {
 	/** Record the current core state: ARM, Thumb, or otherwise. */
 	enum arm_state core_state;
 
-	/** ARM architecture version */
-	enum arm_arch arch;
+	/** Flag reporting unavailability of the BKPT instruction. */
+	bool is_armv4;
+
+	/** Flag reporting armv6m based core. */
+	bool is_armv6m;
 
 	/** Floating point or VFP version, 0 if disabled. */
 	int arm_vfp_version;
@@ -221,13 +211,13 @@ struct arm {
 	/** Read coprocessor register.  */
 	int (*mrc)(struct target *target, int cpnum,
 			uint32_t op1, uint32_t op2,
-			uint32_t crn, uint32_t crm,
+			uint32_t CRn, uint32_t CRm,
 			uint32_t *value);
 
 	/** Write coprocessor register.  */
 	int (*mcr)(struct target *target, int cpnum,
 			uint32_t op1, uint32_t op2,
-			uint32_t crn, uint32_t crm,
+			uint32_t CRn, uint32_t CRm,
 			uint32_t value);
 
 	void *arch_info;
@@ -242,18 +232,18 @@ struct arm {
 /** Convert target handle to generic ARM target state handle. */
 static inline struct arm *target_to_arm(struct target *target)
 {
-	assert(target);
+	assert(target != NULL);
 	return target->arch_info;
 }
 
 static inline bool is_arm(struct arm *arm)
 {
-	assert(arm);
+	assert(arm != NULL);
 	return arm->common_magic == ARM_COMMON_MAGIC;
 }
 
 struct arm_algorithm {
-	unsigned int common_magic;
+	int common_magic;
 
 	enum arm_mode core_mode;
 	enum arm_state core_state;
@@ -268,12 +258,9 @@ struct arm_reg {
 };
 
 struct reg_cache *arm_build_reg_cache(struct target *target, struct arm *arm);
-void arm_free_reg_cache(struct arm *arm);
-
 struct reg_cache *armv8_build_reg_cache(struct target *target);
 
 extern const struct command_registration arm_command_handlers[];
-extern const struct command_registration arm_all_profiles_command_handlers[];
 
 int arm_arch_state(struct target *target);
 const char *arm_get_gdb_arch(struct target *target);
@@ -309,5 +296,8 @@ int arm_blank_check_memory(struct target *target,
 void arm_set_cpsr(struct arm *arm, uint32_t cpsr);
 struct reg *arm_reg_current(struct arm *arm, unsigned regnum);
 struct reg *armv8_reg_current(struct arm *arm, unsigned regnum);
+
+extern struct reg arm_gdb_dummy_fp_reg;
+extern struct reg arm_gdb_dummy_fps_reg;
 
 #endif /* OPENOCD_TARGET_ARM_H */

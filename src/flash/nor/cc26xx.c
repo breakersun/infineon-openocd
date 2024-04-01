@@ -1,7 +1,18 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2017 by Texas Instruments, Inc.                         *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -32,16 +43,6 @@ struct cc26xx_bank {
 	uint32_t algo_working_size;
 	uint32_t buffer_addr[2];
 	uint32_t params_addr[2];
-};
-
-/* Flash helper algorithm for CC26x0 Chameleon targets */
-static const uint8_t cc26x0_algo[] = {
-#include "../../../contrib/loaders/flash/cc26xx/cc26x0_algo.inc"
-};
-
-/* Flash helper algorithm for CC26x2 Agama targets */
-static const uint8_t cc26x2_algo[] = {
-#include "../../../contrib/loaders/flash/cc26xx/cc26x2_algo.inc"
 };
 
 static int cc26xx_auto_probe(struct flash_bank *bank);
@@ -106,9 +107,9 @@ static int cc26xx_wait_algo_done(struct flash_bank *bank, uint32_t params_addr)
 	int retval = ERROR_OK;
 
 	start_ms = timeval_ms();
-	while (status == CC26XX_BUFFER_FULL) {
+	while (CC26XX_BUFFER_FULL == status) {
 		retval = target_read_u32(target, status_addr, &status);
-		if (retval != ERROR_OK)
+		if (ERROR_OK != retval)
 			return retval;
 
 		elapsed_ms = timeval_ms() - start_ms;
@@ -118,7 +119,7 @@ static int cc26xx_wait_algo_done(struct flash_bank *bank, uint32_t params_addr)
 			break;
 	};
 
-	if (status != CC26XX_BUFFER_EMPTY) {
+	if (CC26XX_BUFFER_EMPTY != status) {
 		LOG_ERROR("%s: Flash operation failed", cc26xx_bank->family_name);
 		return ERROR_FAIL;
 	}
@@ -135,30 +136,28 @@ static int cc26xx_init(struct flash_bank *bank)
 
 	/* Make sure we've probed the flash to get the device and size */
 	retval = cc26xx_auto_probe(bank);
-	if (retval != ERROR_OK)
+	if (ERROR_OK != retval)
 		return retval;
 
 	/* Check for working area to use for flash helper algorithm */
-	target_free_working_area(target, cc26xx_bank->working_area);
-	cc26xx_bank->working_area = NULL;
-
+	if (NULL != cc26xx_bank->working_area)
+		target_free_working_area(target, cc26xx_bank->working_area);
 	retval = target_alloc_working_area(target, cc26xx_bank->algo_working_size,
 				&cc26xx_bank->working_area);
-	if (retval != ERROR_OK)
+	if (ERROR_OK != retval)
 		return retval;
 
 	/* Confirm the defined working address is the area we need to use */
-	if (cc26xx_bank->working_area->address != CC26XX_ALGO_BASE_ADDRESS)
+	if (CC26XX_ALGO_BASE_ADDRESS != cc26xx_bank->working_area->address)
 		return ERROR_TARGET_RESOURCE_NOT_AVAILABLE;
 
 	/* Write flash helper algorithm into target memory */
 	retval = target_write_buffer(target, CC26XX_ALGO_BASE_ADDRESS,
 				cc26xx_bank->algo_size, cc26xx_bank->algo_code);
-	if (retval != ERROR_OK) {
+	if (ERROR_OK != retval) {
 		LOG_ERROR("%s: Failed to load flash helper algorithm",
 			cc26xx_bank->family_name);
 		target_free_working_area(target, cc26xx_bank->working_area);
-		cc26xx_bank->working_area = NULL;
 		return retval;
 	}
 
@@ -169,11 +168,10 @@ static int cc26xx_init(struct flash_bank *bank)
 	/* Begin executing the flash helper algorithm */
 	retval = target_start_algorithm(target, 0, NULL, 0, NULL,
 				CC26XX_ALGO_BASE_ADDRESS, 0, &cc26xx_bank->armv7m_info);
-	if (retval != ERROR_OK) {
+	if (ERROR_OK != retval) {
 		LOG_ERROR("%s: Failed to start flash helper algorithm",
 			cc26xx_bank->family_name);
 		target_free_working_area(target, cc26xx_bank->working_area);
-		cc26xx_bank->working_area = NULL;
 		return retval;
 	}
 
@@ -213,13 +211,13 @@ static int cc26xx_mass_erase(struct flash_bank *bank)
 
 	int retval;
 
-	if (target->state != TARGET_HALTED) {
+	if (TARGET_HALTED != target->state) {
 		LOG_ERROR("Target not halted");
 		return ERROR_TARGET_NOT_HALTED;
 	}
 
 	retval = cc26xx_init(bank);
-	if (retval != ERROR_OK)
+	if (ERROR_OK != retval)
 		return retval;
 
 	/* Initialize algorithm parameters */
@@ -233,7 +231,7 @@ static int cc26xx_mass_erase(struct flash_bank *bank)
 				sizeof(algo_params), (uint8_t *)&algo_params);
 
 	/* Wait for command to complete */
-	if (retval == ERROR_OK)
+	if (ERROR_OK == retval)
 		retval = cc26xx_wait_algo_done(bank, cc26xx_bank->params_addr[0]);
 
 	/* Regardless of errors, try to close down algo */
@@ -250,7 +248,7 @@ FLASH_BANK_COMMAND_HANDLER(cc26xx_flash_bank_command)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
 	cc26xx_bank = malloc(sizeof(struct cc26xx_bank));
-	if (!cc26xx_bank)
+	if (NULL == cc26xx_bank)
 		return ERROR_FAIL;
 
 	/* Initialize private flash information */
@@ -266,8 +264,7 @@ FLASH_BANK_COMMAND_HANDLER(cc26xx_flash_bank_command)
 	return ERROR_OK;
 }
 
-static int cc26xx_erase(struct flash_bank *bank, unsigned int first,
-		unsigned int last)
+static int cc26xx_erase(struct flash_bank *bank, int first, int last)
 {
 	struct target *target = bank->target;
 	struct cc26xx_bank *cc26xx_bank = bank->driver_priv;
@@ -277,7 +274,7 @@ static int cc26xx_erase(struct flash_bank *bank, unsigned int first,
 	uint32_t length;
 	int retval;
 
-	if (target->state != TARGET_HALTED) {
+	if (TARGET_HALTED != target->state) {
 		LOG_ERROR("Target not halted");
 		return ERROR_TARGET_NOT_HALTED;
 	}
@@ -292,7 +289,7 @@ static int cc26xx_erase(struct flash_bank *bank, unsigned int first,
 	length = (last - first + 1) * cc26xx_bank->sector_length;
 
 	retval = cc26xx_init(bank);
-	if (retval != ERROR_OK)
+	if (ERROR_OK != retval)
 		return retval;
 
 	/* Set up algorithm parameters for erase command */
@@ -306,7 +303,7 @@ static int cc26xx_erase(struct flash_bank *bank, unsigned int first,
 				sizeof(algo_params), (uint8_t *)&algo_params);
 
 	/* If no error, wait for erase to finish */
-	if (retval == ERROR_OK)
+	if (ERROR_OK == retval)
 		retval = cc26xx_wait_algo_done(bank, cc26xx_bank->params_addr[0]);
 
 	/* Regardless of errors, try to close down algo */
@@ -329,13 +326,13 @@ static int cc26xx_write(struct flash_bank *bank, const uint8_t *buffer,
 	uint32_t index;
 	int retval;
 
-	if (target->state != TARGET_HALTED) {
+	if (TARGET_HALTED != target->state) {
 		LOG_ERROR("Target not halted");
 		return ERROR_TARGET_NOT_HALTED;
 	}
 
 	retval = cc26xx_init(bank);
-	if (retval != ERROR_OK)
+	if (ERROR_OK != retval)
 		return retval;
 
 	/* Initialize algorithm parameters to default values */
@@ -356,7 +353,7 @@ static int cc26xx_write(struct flash_bank *bank, const uint8_t *buffer,
 		/* Put next block of data to flash into buffer */
 		retval = target_write_buffer(target, cc26xx_bank->buffer_addr[index],
 					size, buffer);
-		if (retval != ERROR_OK) {
+		if (ERROR_OK != retval) {
 			LOG_ERROR("Unable to write data to target memory");
 			break;
 		}
@@ -369,13 +366,13 @@ static int cc26xx_write(struct flash_bank *bank, const uint8_t *buffer,
 		/* Issue flash helper algorithm parameters for block write */
 		retval = target_write_buffer(target, cc26xx_bank->params_addr[index],
 					sizeof(algo_params[index]), (uint8_t *)&algo_params[index]);
-		if (retval != ERROR_OK)
+		if (ERROR_OK != retval)
 			break;
 
 		/* Wait for next ping pong buffer to be ready */
 		index ^= 1;
 		retval = cc26xx_wait_algo_done(bank, cc26xx_bank->params_addr[index]);
-		if (retval != ERROR_OK)
+		if (ERROR_OK != retval)
 			break;
 
 		count -= size;
@@ -388,7 +385,7 @@ static int cc26xx_write(struct flash_bank *bank, const uint8_t *buffer,
 	}
 
 	/* If no error yet, wait for last buffer to finish */
-	if (retval == ERROR_OK) {
+	if (ERROR_OK == retval) {
 		index ^= 1;
 		retval = cc26xx_wait_algo_done(bank, cc26xx_bank->params_addr[index]);
 	}
@@ -412,12 +409,12 @@ static int cc26xx_probe(struct flash_bank *bank)
 	int retval;
 
 	retval = target_read_u32(target, FCFG1_ICEPICK_ID, &value);
-	if (retval != ERROR_OK)
+	if (ERROR_OK != retval)
 		return retval;
 	cc26xx_bank->icepick_id = value;
 
 	retval = target_read_u32(target, FCFG1_USER_ID, &value);
-	if (retval != ERROR_OK)
+	if (ERROR_OK != retval)
 		return retval;
 	cc26xx_bank->user_id = value;
 
@@ -456,14 +453,14 @@ static int cc26xx_probe(struct flash_bank *bank)
 	}
 
 	retval = target_read_u32(target, CC26XX_FLASH_SIZE_INFO, &value);
-	if (retval != ERROR_OK)
+	if (ERROR_OK != retval)
 		return retval;
 	num_sectors = value & 0xff;
 	if (num_sectors > max_sectors)
 		num_sectors = max_sectors;
 
 	bank->sectors = malloc(sizeof(struct flash_sector) * num_sectors);
-	if (!bank->sectors)
+	if (NULL == bank->sectors)
 		return ERROR_FAIL;
 
 	bank->base = CC26XX_FLASH_BASE_ADDR;
@@ -500,9 +497,10 @@ static int cc26xx_auto_probe(struct flash_bank *bank)
 	return retval;
 }
 
-static int cc26xx_info(struct flash_bank *bank, struct command_invocation *cmd)
+static int cc26xx_info(struct flash_bank *bank, char *buf, int buf_size)
 {
 	struct cc26xx_bank *cc26xx_bank = bank->driver_priv;
+	int printed = 0;
 	const char *device;
 
 	switch (cc26xx_bank->device_type) {
@@ -527,9 +525,12 @@ static int cc26xx_info(struct flash_bank *bank, struct command_invocation *cmd)
 			break;
 	}
 
-	command_print_sameline(cmd,
-		"%s device: ICEPick ID 0x%08" PRIx32 ", USER ID 0x%08" PRIx32 "\n",
+	printed = snprintf(buf, buf_size,
+		"%s device: ICEPick ID 0x%08x, USER ID 0x%08x\n",
 		device, cc26xx_bank->icepick_id, cc26xx_bank->user_id);
+
+	if (printed >= buf_size)
+		return ERROR_BUF_TOO_SMALL;
 
 	return ERROR_OK;
 }

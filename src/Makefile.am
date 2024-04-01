@@ -1,5 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-or-later
-
 noinst_LTLIBRARIES += %D%/libopenocd.la
 bin_PROGRAMS += %D%/openocd
 
@@ -18,10 +16,6 @@ if INTERNAL_JIMTCL
 %C%_openocd_LDADD += $(top_builddir)/jimtcl/libjim.a
 else
 %C%_openocd_LDADD += -ljim
-endif
-
-if ALL_STATIC
-%C%_openocd_LDFLAGS = -all-static
 endif
 
 %C%_libopenocd_la_CPPFLAGS =
@@ -59,8 +53,7 @@ endif
 	%D%/target/libtarget.la \
 	%D%/server/libserver.la \
 	%D%/rtos/librtos.la \
-	%D%/helper/libhelper.la \
-	%D%/rtt/librtt.la
+	%D%/helper/libhelper.la
 
 BIN2C = $(srcdir)/%D%/helper/bin2char.sh
 
@@ -71,7 +64,6 @@ BUILT_SOURCES += %D%/startup_tcl.inc
 
 # Convert .tcl to c-array
 %D%/startup_tcl.inc: $(STARTUP_TCL_SRCS)
-	mkdir -p %D%
 	cat $^ | $(BIN2C) > $@ || { rm -f $@; false; }
 
 # add generated files to make clean list
@@ -91,4 +83,3 @@ include %D%/rtos/Makefile.am
 include %D%/server/Makefile.am
 include %D%/flash/Makefile.am
 include %D%/pld/Makefile.am
-include %D%/rtt/Makefile.am

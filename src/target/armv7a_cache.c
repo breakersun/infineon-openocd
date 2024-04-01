@@ -1,8 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2015 by Oleksij Rempel                                  *
  *   linux@rempel-privat.de                                                *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -15,7 +26,6 @@
 #include "armv7a_cache.h"
 #include <helper/time_support.h>
 #include "arm_opcodes.h"
-#include "smp.h"
 
 static int armv7a_l1_d_cache_sanity_check(struct target *target)
 {
@@ -128,10 +138,14 @@ int armv7a_cache_auto_flush_all_data(struct target *target)
 
 	if (target->smp) {
 		struct target_list *head;
-		foreach_smp_target(head, target->smp_targets) {
-			struct target *curr = head->target;
+		struct target *curr;
+		head = target->head;
+		while (head != (struct target_list *)NULL) {
+			curr = head->target;
 			if (curr->state == TARGET_HALTED)
 				retval = armv7a_l1_d_cache_clean_inval_all(curr);
+
+			head = head->next;
 		}
 	} else
 		retval = armv7a_l1_d_cache_clean_inval_all(target);
@@ -395,7 +409,7 @@ int armv7a_cache_flush_virt(struct target *target, uint32_t virt,
  * We assume that target core was chosen correctly. It means if same data
  * was handled by two cores, other core will loose the changes. Since it
  * is impossible to know (FIXME) which core has correct data, keep in mind
- * that some kind of data lost or corruption is possible.
+ * that some kind of data lost or korruption is possible.
  * Possible scenario:
  *  - core1 loaded and changed data on 0x12345678
  *  - we halted target and modified same data on core0
@@ -417,7 +431,7 @@ COMMAND_HANDLER(arm7a_l1_cache_info_cmd)
 	struct target *target = get_current_target(CMD_CTX);
 	struct armv7a_common *armv7a = target_to_armv7a(target);
 
-	return armv7a_handle_cache_info_command(CMD,
+	return armv7a_handle_cache_info_command(CMD_CTX,
 			&armv7a->armv7a_mmu.armv7a_cache);
 }
 
@@ -499,7 +513,7 @@ COMMAND_HANDLER(arm7a_cache_disable_auto_cmd)
 	struct armv7a_common *armv7a = target_to_armv7a(target);
 
 	if (CMD_ARGC == 0) {
-		command_print(CMD, "auto cache is %s",
+		command_print(CMD_CTX, "auto cache is %s",
 			armv7a->armv7a_mmu.armv7a_cache.auto_cache_enabled ? "enabled" : "disabled");
 		return ERROR_OK;
 	}
@@ -558,12 +572,12 @@ static const struct command_registration arm7a_l1_i_cache_commands[] = {
 	COMMAND_REGISTRATION_DONE
 };
 
-static const struct command_registration arm7a_l1_di_cache_group_handlers[] = {
+const struct command_registration arm7a_l1_di_cache_group_handlers[] = {
 	{
 		.name = "info",
 		.handler = arm7a_l1_cache_info_cmd,
 		.mode = COMMAND_ANY,
-		.help = "print cache related information",
+		.help = "print cache realted information",
 		.usage = "",
 	},
 	{
@@ -583,7 +597,7 @@ static const struct command_registration arm7a_l1_di_cache_group_handlers[] = {
 	COMMAND_REGISTRATION_DONE
 };
 
-static const struct command_registration arm7a_cache_group_handlers[] = {
+const struct command_registration arm7a_cache_group_handlers[] = {
 	{
 		.name = "auto",
 		.handler = arm7a_cache_disable_auto_cmd,

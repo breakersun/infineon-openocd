@@ -1,11 +1,22 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2006 by Magnus Lundin                                   *
  *   lundin@mlu.mine.nu                                                    *
  *                                                                         *
  *   Copyright (C) 2008 by Spencer Oliver                                  *
  *   spen@spen-soft.co.uk                                                  *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 /***************************************************************************
@@ -19,7 +30,6 @@
 #include "jtag/interface.h"
 #include "imp.h"
 #include <target/algorithm.h>
-#include <target/arm_adi_v5.h>
 #include <target/armv7m.h>
 
 #define DID0_VER(did0) ((did0 >> 28)&0x07)
@@ -116,7 +126,7 @@ static const struct {
 	uint8_t class;
 	uint8_t partno;
 	const char *partname;
-} stellaris_parts[] = {
+} StellarisParts[] = {
 	{0x00, 0x01, "LM3S101"},
 	{0x00, 0x02, "LM3S102"},
 	{0x01, 0xBF, "LM3S1110"},
@@ -426,7 +436,7 @@ static const struct {
 	{0xFF, 0x00, "Unknown Part"}
 };
 
-static const char * const stellaris_classname[] = {
+static const char * const StellarisClassname[] = {
 	"Sandstorm",
 	"Fury",
 	"Unknown",
@@ -469,44 +479,52 @@ FLASH_BANK_COMMAND_HANDLER(stellaris_flash_bank_command)
 	return ERROR_OK;
 }
 
-static int get_stellaris_info(struct flash_bank *bank, struct command_invocation *cmd)
+static int get_stellaris_info(struct flash_bank *bank, char *buf, int buf_size)
 {
+	int printed;
 	struct stellaris_flash_bank *stellaris_info = bank->driver_priv;
 
 	if (stellaris_info->did1 == 0)
 		return ERROR_FLASH_BANK_NOT_PROBED;
 
-	/* Read main and master clock frequency register */
+	/* Read main and master clock freqency register */
 	stellaris_read_clock_info(bank);
 
-	command_print_sameline(cmd,
-			"\nTI/LMI Stellaris information: Chip is "
-			"class %i (%s) %s rev %c%i\n",
-			stellaris_info->target_class,
-			stellaris_classname[stellaris_info->target_class],
-			stellaris_info->target_name,
-			(int)('A' + ((stellaris_info->did0 >> 8) & 0xFF)),
-			(int)((stellaris_info->did0) & 0xFF));
+	printed = snprintf(buf,
+			   buf_size,
+			   "\nTI/LMI Stellaris information: Chip is "
+			   "class %i (%s) %s rev %c%i\n",
+			   stellaris_info->target_class,
+			   StellarisClassname[stellaris_info->target_class],
+			   stellaris_info->target_name,
+			   (int)('A' + ((stellaris_info->did0 >> 8) & 0xFF)),
+			   (int)((stellaris_info->did0) & 0xFF));
+	buf += printed;
+	buf_size -= printed;
 
-	command_print_sameline(cmd,
-			"did1: 0x%8.8" PRIx32 ", arch: 0x%4.4" PRIx32
-			", eproc: %s, ramsize: %" PRIu32 "k, flashsize: %" PRIu32 "k\n",
-			stellaris_info->did1,
-			stellaris_info->did1,
-			"ARMv7M",
-			stellaris_info->sramsiz,
-			(uint32_t)(stellaris_info->num_pages * stellaris_info->pagesize / 1024));
+	printed = snprintf(buf,
+			   buf_size,
+			   "did1: 0x%8.8" PRIx32 ", arch: 0x%4.4" PRIx32
+			   ", eproc: %s, ramsize: %" PRIu32 "k, flashsize: %" PRIu32 "k\n",
+			   stellaris_info->did1,
+			   stellaris_info->did1,
+			   "ARMv7M",
+			   stellaris_info->sramsiz,
+			   (uint32_t)(stellaris_info->num_pages * stellaris_info->pagesize / 1024));
+	buf += printed;
+	buf_size -= printed;
 
-	command_print_sameline(cmd,
-			"master clock: %ikHz%s, "
-			"rcc is 0x%" PRIx32 ", rcc2 is 0x%" PRIx32 ", "
-			"pagesize: %" PRIu32 ", pages: %" PRIu32,
-			(int)(stellaris_info->mck_freq / 1000),
-			stellaris_info->mck_desc,
-			stellaris_info->rcc,
-			stellaris_info->rcc2,
-			stellaris_info->pagesize,
-			stellaris_info->num_pages);
+	snprintf(buf,
+			   buf_size,
+			   "master clock: %ikHz%s, "
+			   "rcc is 0x%" PRIx32 ", rcc2 is 0x%" PRIx32 ", "
+			   "pagesize: %" PRIu32 ", pages: %" PRIu32,
+			   (int)(stellaris_info->mck_freq / 1000),
+			   stellaris_info->mck_desc,
+			   stellaris_info->rcc,
+			   stellaris_info->rcc2,
+			   stellaris_info->pagesize,
+			   stellaris_info->num_pages);
 
 	return ERROR_OK;
 }
@@ -515,7 +533,7 @@ static int get_stellaris_info(struct flash_bank *bank, struct command_invocation
 *	chip identification and status                                         *
 ***************************************************************************/
 
-/* Set the flash timing register to match current clocking */
+/* Set the flash timimg register to match current clocking */
 static void stellaris_set_flash_timing(struct flash_bank *bank)
 {
 	struct stellaris_flash_bank *stellaris_info = bank->driver_priv;
@@ -733,13 +751,13 @@ static int stellaris_read_part_info(struct flash_bank *bank)
 			LOG_WARNING("Unknown did0 class");
 	}
 
-	for (i = 0; stellaris_parts[i].partno; i++) {
-		if ((stellaris_parts[i].partno == ((did1 >> 16) & 0xFF)) &&
-				(stellaris_parts[i].class == stellaris_info->target_class))
+	for (i = 0; StellarisParts[i].partno; i++) {
+		if ((StellarisParts[i].partno == ((did1 >> 16) & 0xFF)) &&
+				(StellarisParts[i].class == stellaris_info->target_class))
 			break;
 	}
 
-	stellaris_info->target_name = stellaris_parts[i].partname;
+	stellaris_info->target_name = StellarisParts[i].partname;
 
 	stellaris_info->did0 = did0;
 	stellaris_info->did1 = did1;
@@ -785,11 +803,12 @@ static int stellaris_protect_check(struct flash_bank *bank)
 		stellaris->num_pages;
 	uint32_t fmppe_addr;
 	int status = ERROR_OK;
+	unsigned i;
 
 	if (stellaris->did1 == 0)
 		return ERROR_FLASH_BANK_NOT_PROBED;
 
-	for (unsigned int i = 0; i < bank->num_sectors; i++)
+	for (i = 0; i < (unsigned) bank->num_sectors; i++)
 		bank->sectors[i].is_protected = -1;
 
 	/* Read each Flash Memory Protection Program Enable (FMPPE) register
@@ -809,7 +828,7 @@ static int stellaris_protect_check(struct flash_bank *bank)
 		uint32_t fmppe;
 
 		target_read_u32(target, fmppe_addr, &fmppe);
-		for (unsigned int i = 0; i < 32 && lockbitnum + i < lockbitcnt; i++) {
+		for (i = 0; i < 32 && lockbitnum + i < lockbitcnt; i++) {
 			bool protect = !(fmppe & (1 << i));
 			if (bits_per_page) {
 				bank->sectors[page++].is_protected = protect;
@@ -825,9 +844,9 @@ static int stellaris_protect_check(struct flash_bank *bank)
 	return status;
 }
 
-static int stellaris_erase(struct flash_bank *bank, unsigned int first,
-		unsigned int last)
+static int stellaris_erase(struct flash_bank *bank, int first, int last)
 {
+	int banknr;
 	uint32_t flash_fmc, flash_cris;
 	struct stellaris_flash_bank *stellaris_info = bank->driver_priv;
 	struct target *target = bank->target;
@@ -840,10 +859,10 @@ static int stellaris_erase(struct flash_bank *bank, unsigned int first,
 	if (stellaris_info->did1 == 0)
 		return ERROR_FLASH_BANK_NOT_PROBED;
 
-	if ((last < first) || (last >= stellaris_info->num_pages))
+	if ((first < 0) || (last < first) || (last >= (int)stellaris_info->num_pages))
 		return ERROR_FLASH_SECTOR_INVALID;
 
-	if ((first == 0) && (last == (stellaris_info->num_pages - 1)))
+	if ((first == 0) && (last == ((int)stellaris_info->num_pages-1)))
 		return stellaris_mass_erase(bank);
 
 	/* Refresh flash controller timing */
@@ -858,7 +877,7 @@ static int stellaris_erase(struct flash_bank *bank, unsigned int first,
 	 * it might want to process those IRQs.
 	 */
 
-	for (unsigned int banknr = first; banknr <= last; banknr++) {
+	for (banknr = first; banknr <= last; banknr++) {
 		/* Address is first word in page */
 		target_write_u32(target, FLASH_FMA, banknr * stellaris_info->pagesize);
 		/* Write erase command */
@@ -868,7 +887,7 @@ static int stellaris_erase(struct flash_bank *bank, unsigned int first,
 			target_read_u32(target, FLASH_FMC, &flash_fmc);
 		} while (flash_fmc & FMC_ERASE);
 
-		/* Check access violations */
+		/* Check acess violations */
 		target_read_u32(target, FLASH_CRIS, &flash_cris);
 		if (flash_cris & (AMASK)) {
 			LOG_WARNING("Error erasing flash page %i,  flash_cris 0x%" PRIx32 "",
@@ -876,13 +895,14 @@ static int stellaris_erase(struct flash_bank *bank, unsigned int first,
 			target_write_u32(target, FLASH_CRIS, 0);
 			return ERROR_FLASH_OPERATION_FAILED;
 		}
+
+		bank->sectors[banknr].is_erased = 1;
 	}
 
 	return ERROR_OK;
 }
 
-static int stellaris_protect(struct flash_bank *bank, int set,
-		unsigned int first, unsigned int last)
+static int stellaris_protect(struct flash_bank *bank, int set, int first, int last)
 {
 	struct stellaris_flash_bank *stellaris = bank->driver_priv;
 	struct target *target = bank->target;
@@ -932,7 +952,7 @@ static int stellaris_protect(struct flash_bank *bank, int set,
 	else
 		fmppe_addr = SCB_BASE | FMPPE;
 
-	unsigned int page = 0;
+	int page = 0;
 	unsigned int lockbitnum, lockbitcnt = flash_sizek / 2;
 	/* Every lock bit always corresponds to a 2k region */
 	for (lockbitnum = 0; lockbitnum < lockbitcnt; lockbitnum += 32) {
@@ -978,7 +998,7 @@ static int stellaris_protect(struct flash_bank *bank, int set,
 	return ERROR_OK;
 }
 
-/* see contrib/loaders/flash/stellaris.s for src */
+/* see contib/loaders/flash/stellaris.s for src */
 
 static const uint8_t stellaris_write_code[] = {
 								/* write: */
@@ -1150,7 +1170,7 @@ static int stellaris_write(struct flash_bank *bank, const uint8_t *buffer,
 			if (retval == ERROR_TARGET_RESOURCE_NOT_AVAILABLE) {
 				LOG_DEBUG("writing flash word-at-a-time");
 			} else if (retval == ERROR_FLASH_OPERATION_FAILED) {
-				/* if an error occurred, we examine the reason, and quit */
+				/* if an error occured, we examine the reason, and quit */
 				target_read_u32(target, FLASH_CRIS, &flash_cris);
 
 				LOG_ERROR("flash writing failed with CRIS: 0x%" PRIx32 "", flash_cris);
@@ -1230,13 +1250,16 @@ static int stellaris_probe(struct flash_bank *bank)
 	if (retval != ERROR_OK)
 		return retval;
 
-	free(bank->sectors);
+	if (bank->sectors) {
+		free(bank->sectors);
+		bank->sectors = NULL;
+	}
 
 	/* provide this for the benefit of the NOR flash framework */
 	bank->size = stellaris_info->num_pages * stellaris_info->pagesize;
 	bank->num_sectors = stellaris_info->num_pages;
 	bank->sectors = calloc(bank->num_sectors, sizeof(struct flash_sector));
-	for (unsigned int i = 0; i < bank->num_sectors; i++) {
+	for (int i = 0; i < bank->num_sectors; i++) {
 		bank->sectors[i].offset = i * stellaris_info->pagesize;
 		bank->sectors[i].size = stellaris_info->pagesize;
 		bank->sectors[i].is_erased = -1;
@@ -1298,18 +1321,24 @@ static int stellaris_mass_erase(struct flash_bank *bank)
 
 COMMAND_HANDLER(stellaris_handle_mass_erase_command)
 {
+	int i;
+
 	if (CMD_ARGC < 1)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
 	struct flash_bank *bank;
 	int retval = CALL_COMMAND_HANDLER(flash_command_get_bank, 0, &bank);
-	if (retval != ERROR_OK)
+	if (ERROR_OK != retval)
 		return retval;
 
-	if (stellaris_mass_erase(bank) == ERROR_OK)
-		command_print(CMD, "stellaris mass erase complete");
-	else
-		command_print(CMD, "stellaris mass erase failed");
+	if (stellaris_mass_erase(bank) == ERROR_OK) {
+		/* set all sectors as erased */
+		for (i = 0; i < bank->num_sectors; i++)
+			bank->sectors[i].is_erased = 1;
+
+		command_print(CMD_CTX, "stellaris mass erase complete");
+	} else
+		command_print(CMD_CTX, "stellaris mass erase failed");
 
 	return ERROR_OK;
 }

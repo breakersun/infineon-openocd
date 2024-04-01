@@ -1,8 +1,17 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
-/*
- * Copyright (C) 2015 by Esben Haabendal <eha@deif.com>
- */
+/***************************************************************************
+ *   Copyright (C) 2015 by Esben Haabendal                                 *
+ *   eha@deif.com                                                          *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -104,7 +113,7 @@ static void ls1_sap_set_instr(struct jtag_tap *tap, uint32_t new_instr)
 static void ls1_sap_set_addr_high(struct jtag_tap *tap, uint16_t addr_high)
 {
 	struct scan_field field;
-	uint8_t buf[2] = { 0 };
+	uint8_t buf[2];
 
 	ls1_sap_set_instr(tap, 0x21);
 
@@ -121,7 +130,7 @@ static void ls1_sap_memory_cmd(struct jtag_tap *tap, uint32_t address,
 			       int32_t size, bool rnw)
 {
 	struct scan_field field;
-	uint8_t cmd[8] = { 0 };
+	uint8_t cmd[8];
 
 	ls1_sap_set_instr(tap, 0x24);
 
@@ -173,9 +182,9 @@ static int ls1_sap_read_memory(struct target *target, target_addr_t address,
 			       uint32_t size, uint32_t count, uint8_t *buffer)
 {
 	LOG_DEBUG("Reading memory at physical address 0x%" TARGET_PRIxADDR
-		  "; size %" PRIu32 "; count %" PRIu32, address, size, count);
+		  "; size %" PRId32 "; count %" PRId32, address, size, count);
 
-	if (count == 0 || !buffer)
+	if (count == 0 || buffer == NULL)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
 	ls1_sap_set_addr_high(target->tap, 0);
@@ -195,10 +204,10 @@ static int ls1_sap_write_memory(struct target *target, target_addr_t address,
 				const uint8_t *buffer)
 {
 	LOG_DEBUG("Writing memory at physical address 0x%" TARGET_PRIxADDR
-		  "; size %" PRIu32 "; count %" PRIu32, address, size, count);
+		  "; size %" PRId32 "; count %" PRId32, address, size, count);
 
 
-	if (count == 0 || !buffer)
+	if (count == 0 || buffer == NULL)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
 	ls1_sap_set_addr_high(target->tap, 0);

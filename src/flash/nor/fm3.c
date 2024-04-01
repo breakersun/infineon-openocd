@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2011 by Marc Willam, Holger Wech                        *
  *       openOCD.fseu(AT)de.fujitsu.com                                    *
@@ -7,6 +5,19 @@
  *                                                                         *
  *   Copyright (C) 2013 Nemui Trinomius                                    *
  *   nemuisan_kawausogasuki@live.jp                                        *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -22,35 +33,35 @@
 #define FLASH_DQ5 0x20		/* Time limit exceeding flag bit (TLOV) position */
 
 enum fm3_variant {
-	MB9BFXX1,	/* Flash Type '1' */
-	MB9BFXX2,
-	MB9BFXX3,
-	MB9BFXX4,
-	MB9BFXX5,
-	MB9BFXX6,
-	MB9BFXX7,
-	MB9BFXX8,
+	mb9bfxx1,	/* Flash Type '1' */
+	mb9bfxx2,
+	mb9bfxx3,
+	mb9bfxx4,
+	mb9bfxx5,
+	mb9bfxx6,
+	mb9bfxx7,
+	mb9bfxx8,
 
-	MB9AFXX1,	/* Flash Type '2' */
-	MB9AFXX2,
-	MB9AFXX3,
-	MB9AFXX4,
-	MB9AFXX5,
-	MB9AFXX6,
-	MB9AFXX7,
-	MB9AFXX8,
+	mb9afxx1,	/* Flash Type '2' */
+	mb9afxx2,
+	mb9afxx3,
+	mb9afxx4,
+	mb9afxx5,
+	mb9afxx6,
+	mb9afxx7,
+	mb9afxx8,
 };
 
 enum fm3_flash_type {
-	FM3_NO_FLASH_TYPE = 0,
-	FM3_FLASH_TYPE1   = 1,
-	FM3_FLASH_TYPE2   = 2
+	fm3_no_flash_type = 0,
+	fm3_flash_type1   = 1,
+	fm3_flash_type2   = 2
 };
 
 struct fm3_flash_bank {
 	enum fm3_variant variant;
 	enum fm3_flash_type flashtype;
-	bool probed;
+	int probed;
 };
 
 FLASH_BANK_COMMAND_HANDLER(fm3_flash_bank_command)
@@ -65,53 +76,53 @@ FLASH_BANK_COMMAND_HANDLER(fm3_flash_bank_command)
 
 	/* Flash type '1' */
 	if (strcmp(CMD_ARGV[5], "mb9bfxx1.cpu") == 0) {
-		fm3_info->variant = MB9BFXX1;
-		fm3_info->flashtype = FM3_FLASH_TYPE1;
+		fm3_info->variant = mb9bfxx1;
+		fm3_info->flashtype = fm3_flash_type1;
 	} else if (strcmp(CMD_ARGV[5], "mb9bfxx2.cpu") == 0) {
-		fm3_info->variant = MB9BFXX2;
-		fm3_info->flashtype = FM3_FLASH_TYPE1;
+		fm3_info->variant = mb9bfxx2;
+		fm3_info->flashtype = fm3_flash_type1;
 	} else if (strcmp(CMD_ARGV[5], "mb9bfxx3.cpu") == 0) {
-		fm3_info->variant = MB9BFXX3;
-		fm3_info->flashtype = FM3_FLASH_TYPE1;
+		fm3_info->variant = mb9bfxx3;
+		fm3_info->flashtype = fm3_flash_type1;
 	} else if (strcmp(CMD_ARGV[5], "mb9bfxx4.cpu") == 0) {
-		fm3_info->variant = MB9BFXX4;
-		fm3_info->flashtype = FM3_FLASH_TYPE1;
+		fm3_info->variant = mb9bfxx4;
+		fm3_info->flashtype = fm3_flash_type1;
 	} else if (strcmp(CMD_ARGV[5], "mb9bfxx5.cpu") == 0) {
-		fm3_info->variant = MB9BFXX5;
-		fm3_info->flashtype = FM3_FLASH_TYPE1;
+		fm3_info->variant = mb9bfxx5;
+		fm3_info->flashtype = fm3_flash_type1;
 	} else if (strcmp(CMD_ARGV[5], "mb9bfxx6.cpu") == 0) {
-		fm3_info->variant = MB9BFXX6;
-		fm3_info->flashtype = FM3_FLASH_TYPE1;
+		fm3_info->variant = mb9bfxx6;
+		fm3_info->flashtype = fm3_flash_type1;
 	} else if (strcmp(CMD_ARGV[5], "mb9bfxx7.cpu") == 0) {
-		fm3_info->variant = MB9BFXX7;
-		fm3_info->flashtype = FM3_FLASH_TYPE1;
+		fm3_info->variant = mb9bfxx7;
+		fm3_info->flashtype = fm3_flash_type1;
 	} else if (strcmp(CMD_ARGV[5], "mb9bfxx8.cpu") == 0) {
-		fm3_info->variant = MB9BFXX8;
-		fm3_info->flashtype = FM3_FLASH_TYPE1;
+		fm3_info->variant = mb9bfxx8;
+		fm3_info->flashtype = fm3_flash_type1;
 	} else if (strcmp(CMD_ARGV[5], "mb9afxx1.cpu") == 0) {	/* Flash type '2' */
-		fm3_info->variant = MB9AFXX1;
-		fm3_info->flashtype = FM3_FLASH_TYPE2;
+		fm3_info->variant = mb9afxx1;
+		fm3_info->flashtype = fm3_flash_type2;
 	} else if (strcmp(CMD_ARGV[5], "mb9afxx2.cpu") == 0) {
-		fm3_info->variant = MB9AFXX2;
-		fm3_info->flashtype = FM3_FLASH_TYPE2;
+		fm3_info->variant = mb9afxx2;
+		fm3_info->flashtype = fm3_flash_type2;
 	} else if (strcmp(CMD_ARGV[5], "mb9afxx3.cpu") == 0) {
-		fm3_info->variant = MB9AFXX3;
-		fm3_info->flashtype = FM3_FLASH_TYPE2;
+		fm3_info->variant = mb9afxx3;
+		fm3_info->flashtype = fm3_flash_type2;
 	} else if (strcmp(CMD_ARGV[5], "mb9afxx4.cpu") == 0) {
-		fm3_info->variant = MB9AFXX4;
-		fm3_info->flashtype = FM3_FLASH_TYPE2;
+		fm3_info->variant = mb9afxx4;
+		fm3_info->flashtype = fm3_flash_type2;
 	} else if (strcmp(CMD_ARGV[5], "mb9afxx5.cpu") == 0) {
-		fm3_info->variant = MB9AFXX5;
-		fm3_info->flashtype = FM3_FLASH_TYPE2;
+		fm3_info->variant = mb9afxx5;
+		fm3_info->flashtype = fm3_flash_type2;
 	} else if (strcmp(CMD_ARGV[5], "mb9afxx6.cpu") == 0) {
-		fm3_info->variant = MB9AFXX6;
-		fm3_info->flashtype = FM3_FLASH_TYPE2;
+		fm3_info->variant = mb9afxx6;
+		fm3_info->flashtype = fm3_flash_type2;
 	} else if (strcmp(CMD_ARGV[5], "mb9afxx7.cpu") == 0) {
-		fm3_info->variant = MB9AFXX7;
-		fm3_info->flashtype = FM3_FLASH_TYPE2;
+		fm3_info->variant = mb9afxx7;
+		fm3_info->flashtype = fm3_flash_type2;
 	} else if (strcmp(CMD_ARGV[5], "mb9afxx8.cpu") == 0) {
-		fm3_info->variant = MB9AFXX8;
-		fm3_info->flashtype = FM3_FLASH_TYPE2;
+		fm3_info->variant = mb9afxx8;
+		fm3_info->flashtype = fm3_flash_type2;
 	}
 
 	/* unknown Flash type */
@@ -121,7 +132,7 @@ FLASH_BANK_COMMAND_HANDLER(fm3_flash_bank_command)
 		return ERROR_FLASH_BANK_INVALID;
 	}
 
-	fm3_info->probed = false;
+	fm3_info->probed = 0;
 
 	return ERROR_OK;
 }
@@ -190,30 +201,29 @@ static int fm3_busy_wait(struct target *target, uint32_t offset, int timeout_ms)
 	return retval;
 }
 
-static int fm3_erase(struct flash_bank *bank, unsigned int first,
-		unsigned int last)
+static int fm3_erase(struct flash_bank *bank, int first, int last)
 {
 	struct fm3_flash_bank *fm3_info = bank->driver_priv;
 	struct target *target = bank->target;
 	int retval = ERROR_OK;
-	uint32_t u32_dummy_read;
-	int odd;
-	uint32_t u32_flash_type;
-	uint32_t u32_flash_seq_address1;
-	uint32_t u32_flash_seq_address2;
+	uint32_t u32DummyRead;
+	int sector, odd;
+	uint32_t u32FlashType;
+	uint32_t u32FlashSeqAddress1;
+	uint32_t u32FlashSeqAddress2;
 
 	struct working_area *write_algorithm;
 	struct reg_param reg_params[3];
 	struct armv7m_algorithm armv7m_info;
 
-	u32_flash_type = (uint32_t) fm3_info->flashtype;
+	u32FlashType = (uint32_t) fm3_info->flashtype;
 
-	if (u32_flash_type == FM3_FLASH_TYPE1) {
-		u32_flash_seq_address1 = 0x00001550;
-		u32_flash_seq_address2 = 0x00000AA8;
-	} else if (u32_flash_type == FM3_FLASH_TYPE2) {
-		u32_flash_seq_address1 = 0x00000AA8;
-		u32_flash_seq_address2 = 0x00000554;
+	if (u32FlashType == fm3_flash_type1) {
+		u32FlashSeqAddress1 = 0x00001550;
+		u32FlashSeqAddress2 = 0x00000AA8;
+	} else if (u32FlashType == fm3_flash_type2) {
+		u32FlashSeqAddress1 = 0x00000AA8;
+		u32FlashSeqAddress2 = 0x00000554;
 	} else {
 		LOG_ERROR("Flash/Device type unknown!");
 		return ERROR_FLASH_OPERATION_FAILED;
@@ -250,7 +260,7 @@ static int fm3_erase(struct flash_bank *bank, unsigned int first,
 		0x00, 0xBE,		/*        BKPT  #0                     */
 	};
 
-	LOG_INFO("Fujitsu MB9[A/B]FXXX: Sector Erase ... (%u to %u)", first, last);
+	LOG_INFO("Fujitsu MB9[A/B]FXXX: Sector Erase ... (%d to %d)", first, last);
 
 	/* disable HW watchdog */
 	retval = target_write_u32(target, 0x40011C00, 0x1ACCE551);
@@ -265,13 +275,13 @@ static int fm3_erase(struct flash_bank *bank, unsigned int first,
 	if (retval != ERROR_OK)
 		return retval;
 
-	/* FASZR = 0x01, Enables CPU Programming Mode (16-bit Flash access) */
+	/* FASZR = 0x01, Enables CPU Programming Mode (16-bit Flash acccess) */
 	retval = target_write_u32(target, 0x40000000, 0x0001);
 	if (retval != ERROR_OK)
 		return retval;
 
 	/* dummy read of FASZR */
-	retval = target_read_u32(target, 0x40000000, &u32_dummy_read);
+	retval = target_read_u32(target, 0x40000000, &u32DummyRead);
 	if (retval != ERROR_OK)
 		return retval;
 
@@ -289,20 +299,20 @@ static int fm3_erase(struct flash_bank *bank, unsigned int first,
 	armv7m_info.common_magic = ARMV7M_COMMON_MAGIC;
 	armv7m_info.core_mode = ARM_MODE_THREAD;
 
-	init_reg_param(&reg_params[0], "r0", 32, PARAM_OUT); /* u32_flash_seq_address1 */
-	init_reg_param(&reg_params[1], "r1", 32, PARAM_OUT); /* u32_flash_seq_address2 */
+	init_reg_param(&reg_params[0], "r0", 32, PARAM_OUT); /* u32FlashSeqAddress1 */
+	init_reg_param(&reg_params[1], "r1", 32, PARAM_OUT); /* u32FlashSeqAddress2 */
 	init_reg_param(&reg_params[2], "r2", 32, PARAM_OUT); /* offset				*/
 
 	/* write code buffer and use Flash sector erase code within fm3				*/
-	for (unsigned int sector = first ; sector <= last ; sector++) {
+	for (sector = first ; sector <= last ; sector++) {
 		uint32_t offset = bank->sectors[sector].offset;
 
 		for (odd = 0; odd < 2 ; odd++) {
 			if (odd)
 				offset += 4;
 
-			buf_set_u32(reg_params[0].value, 0, 32, u32_flash_seq_address1);
-			buf_set_u32(reg_params[1].value, 0, 32, u32_flash_seq_address2);
+			buf_set_u32(reg_params[0].value, 0, 32, u32FlashSeqAddress1);
+			buf_set_u32(reg_params[1].value, 0, 32, u32FlashSeqAddress2);
 			buf_set_u32(reg_params[2].value, 0, 32, offset);
 
 			retval = target_run_algorithm(target, 0, NULL, 3, reg_params,
@@ -317,6 +327,7 @@ static int fm3_erase(struct flash_bank *bank, unsigned int first,
 			if (retval != ERROR_OK)
 				return retval;
 		}
+		bank->sectors[sector].is_erased = 1;
 	}
 
 	target_free_working_area(target, write_algorithm);
@@ -324,12 +335,12 @@ static int fm3_erase(struct flash_bank *bank, unsigned int first,
 	destroy_reg_param(&reg_params[1]);
 	destroy_reg_param(&reg_params[2]);
 
-	/* FASZR = 0x02, Enables CPU Run Mode (32-bit Flash access) */
+	/* FASZR = 0x02, Enables CPU Run Mode (32-bit Flash acccess) */
 	retval = target_write_u32(target, 0x40000000, 0x0002);
 	if (retval != ERROR_OK)
 		return retval;
 
-	retval = target_read_u32(target, 0x40000000, &u32_dummy_read); /* dummy read of FASZR */
+	retval = target_read_u32(target, 0x40000000, &u32DummyRead); /* dummy read of FASZR */
 
 	return retval;
 }
@@ -346,22 +357,22 @@ static int fm3_write_block(struct flash_bank *bank, const uint8_t *buffer,
 	struct reg_param reg_params[6];
 	struct armv7m_algorithm armv7m_info;
 	int retval = ERROR_OK;
-	uint32_t u32_flash_type;
-	uint32_t u32_flash_seq_address1;
-	uint32_t u32_flash_seq_address2;
+	uint32_t u32FlashType;
+	uint32_t u32FlashSeqAddress1;
+	uint32_t u32FlashSeqAddress2;
 
 	/* Increase buffer_size if needed */
 	if (buffer_size < (target->working_area_size / 2))
 		buffer_size = (target->working_area_size / 2);
 
-	u32_flash_type = (uint32_t) fm3_info->flashtype;
+	u32FlashType = (uint32_t) fm3_info->flashtype;
 
-	if (u32_flash_type == FM3_FLASH_TYPE1) {
-		u32_flash_seq_address1 = 0x00001550;
-		u32_flash_seq_address2 = 0x00000AA8;
-	} else if (u32_flash_type == FM3_FLASH_TYPE2) {
-		u32_flash_seq_address1 = 0x00000AA8;
-		u32_flash_seq_address2 = 0x00000554;
+	if (u32FlashType == fm3_flash_type1) {
+		u32FlashSeqAddress1 = 0x00001550;
+		u32FlashSeqAddress2 = 0x00000AA8;
+	} else if (u32FlashType == fm3_flash_type2) {
+		u32FlashSeqAddress1 = 0x00000AA8;
+		u32FlashSeqAddress2 = 0x00000554;
 	} else {
 		LOG_ERROR("Flash/Device type unknown!");
 		return ERROR_FLASH_OPERATION_FAILED;
@@ -389,8 +400,8 @@ static int fm3_write_block(struct flash_bank *bank, const uint8_t *buffer,
 	0x55, 0xF0, 0x01, 0x05,		/*        ORRS.W   R5, R5, #1                 */
 	0x5F, 0xF0, 0x80, 0x46,		/*        MOVS.W   R6, #(fm3_FLASH_IF->FASZ)  */
 	0x35, 0x60,					/*        STR      R5, [R6]                   */
-								/*    u32_dummy_read = fm3_FLASH_IF->FASZ;      */
-	0x28, 0x4D,					/*        LDR.N    R5, ??u32_dummy_read         */
+								/*    u32DummyRead = fm3_FLASH_IF->FASZ;      */
+	0x28, 0x4D,					/*        LDR.N    R5, ??u32DummyRead         */
 	0x5F, 0xF0, 0x80, 0x46,		/*        MOVS.W   R6, #(fm3_FLASH_IF->FASZ)  */
 	0x36, 0x68,					/*        LDR      R6, [R6]                   */
 	0x2E, 0x60,					/*        STR      R6, [R5]                   */
@@ -480,8 +491,8 @@ static int fm3_write_block(struct flash_bank *bank, const uint8_t *buffer,
 	0x55, 0xF0, 0x02, 0x05,		/*        ORRS.W   R5, R5, #2                 */
 	0x5F, 0xF0, 0x80, 0x46,		/*        MOVS.W   R6, #(fm3_FLASH_IF->FASZ)  */
 	0x35, 0x60,					/*        STR      R5, [R6]                   */
-								/*    u32_dummy_read = fm3_FLASH_IF->FASZ;      */
-	0x04, 0x4D,					/*        LDR.N    R5, ??u32_dummy_read         */
+								/*    u32DummyRead = fm3_FLASH_IF->FASZ;      */
+	0x04, 0x4D,					/*        LDR.N    R5, ??u32DummyRead         */
 	0x5F, 0xF0, 0x80, 0x46,		/*        MOVS.W   R6, #(fm3_FLASH_IF->FASZ)  */
 	0x36, 0x68,					/*        LDR      R6, [R6]                   */
 	0x2E, 0x60,					/*        STR      R6, [R5]                   */
@@ -496,7 +507,7 @@ static int fm3_write_block(struct flash_bank *bank, const uint8_t *buffer,
 	/* SRAM basic-address + 8.These address pointers will be patched, if a    */
 	/* different start address in RAM is used (e.g. for Flash type 2)!        */
 	/* Default SRAM basic-address is 0x20000000.                              */
-	0x00, 0x00, 0x00, 0x20,     /* u32_dummy_read address in RAM (0x20000000)   */
+	0x00, 0x00, 0x00, 0x20,     /* u32DummyRead address in RAM (0x20000000)   */
 	0x04, 0x00, 0x00, 0x20      /* u32FlashResult address in RAM (0x20000004) */
 	};
 
@@ -536,7 +547,7 @@ static int fm3_write_block(struct flash_bank *bank, const uint8_t *buffer,
 		return retval;
 
 	/* Patching 'local variable address' */
-	/* Algorithm: u32_dummy_read: */
+	/* Algorithm: u32DummyRead: */
 	retval = target_write_u32(target, (write_algorithm->address + 8)
 			+ sizeof(fm3_flash_write_code) - 8, (write_algorithm->address));
 	if (retval != ERROR_OK)
@@ -583,8 +594,8 @@ static int fm3_write_block(struct flash_bank *bank, const uint8_t *buffer,
 		buf_set_u32(reg_params[0].value, 0, 32, source->address);
 		buf_set_u32(reg_params[1].value, 0, 32, address);
 		buf_set_u32(reg_params[2].value, 0, 32, thisrun_count);
-		buf_set_u32(reg_params[3].value, 0, 32, u32_flash_seq_address1);
-		buf_set_u32(reg_params[4].value, 0, 32, u32_flash_seq_address2);
+		buf_set_u32(reg_params[3].value, 0, 32, u32FlashSeqAddress1);
+		buf_set_u32(reg_params[4].value, 0, 32, u32FlashSeqAddress2);
 
 		retval = target_run_algorithm(target, 0, NULL, 6, reg_params,
 				(write_algorithm->address + 8), 0, 1000, &armv7m_info);
@@ -645,7 +656,7 @@ static int fm3_probe(struct flash_bank *bank)
  */
 
 	num_pages = 10;				/* max number of Flash pages for malloc */
-	fm3_info->probed = false;
+	fm3_info->probed = 0;
 
 	bank->sectors = malloc(sizeof(struct flash_sector) * num_pages);
 	bank->base = 0x00000000;
@@ -661,8 +672,8 @@ static int fm3_probe(struct flash_bank *bank)
 	bank->sectors[1].is_erased = -1;
 	bank->sectors[1].is_protected = -1;
 
-	if ((fm3_info->variant == MB9BFXX1)
-	    || (fm3_info->variant == MB9AFXX1)) {
+	if ((fm3_info->variant == mb9bfxx1)
+	    || (fm3_info->variant == mb9afxx1)) {
 		num_pages = 3;
 		bank->size = 64 * 1024; /* bytes */
 		bank->num_sectors = num_pages;
@@ -673,18 +684,18 @@ static int fm3_probe(struct flash_bank *bank)
 		bank->sectors[2].is_protected = -1;
 	}
 
-	if ((fm3_info->variant == MB9BFXX2)
-		|| (fm3_info->variant == MB9BFXX4)
-		|| (fm3_info->variant == MB9BFXX5)
-		|| (fm3_info->variant == MB9BFXX6)
-		|| (fm3_info->variant == MB9BFXX7)
-		|| (fm3_info->variant == MB9BFXX8)
-		|| (fm3_info->variant == MB9AFXX2)
-		|| (fm3_info->variant == MB9AFXX4)
-		|| (fm3_info->variant == MB9AFXX5)
-		|| (fm3_info->variant == MB9AFXX6)
-		|| (fm3_info->variant == MB9AFXX7)
-		|| (fm3_info->variant == MB9AFXX8)) {
+	if ((fm3_info->variant == mb9bfxx2)
+		|| (fm3_info->variant == mb9bfxx4)
+		|| (fm3_info->variant == mb9bfxx5)
+		|| (fm3_info->variant == mb9bfxx6)
+		|| (fm3_info->variant == mb9bfxx7)
+		|| (fm3_info->variant == mb9bfxx8)
+		|| (fm3_info->variant == mb9afxx2)
+		|| (fm3_info->variant == mb9afxx4)
+		|| (fm3_info->variant == mb9afxx5)
+		|| (fm3_info->variant == mb9afxx6)
+		|| (fm3_info->variant == mb9afxx7)
+		|| (fm3_info->variant == mb9afxx8)) {
 		num_pages = 3;
 		bank->size = 128 * 1024; /* bytes */
 		bank->num_sectors = num_pages;
@@ -695,16 +706,16 @@ static int fm3_probe(struct flash_bank *bank)
 		bank->sectors[2].is_protected = -1;
 	}
 
-	if ((fm3_info->variant == MB9BFXX4)
-		|| (fm3_info->variant == MB9BFXX5)
-		|| (fm3_info->variant == MB9BFXX6)
-		|| (fm3_info->variant == MB9BFXX7)
-		|| (fm3_info->variant == MB9BFXX8)
-		|| (fm3_info->variant == MB9AFXX4)
-		|| (fm3_info->variant == MB9AFXX5)
-		|| (fm3_info->variant == MB9AFXX6)
-		|| (fm3_info->variant == MB9AFXX7)
-		|| (fm3_info->variant == MB9AFXX8)) {
+	if ((fm3_info->variant == mb9bfxx4)
+		|| (fm3_info->variant == mb9bfxx5)
+		|| (fm3_info->variant == mb9bfxx6)
+		|| (fm3_info->variant == mb9bfxx7)
+		|| (fm3_info->variant == mb9bfxx8)
+		|| (fm3_info->variant == mb9afxx4)
+		|| (fm3_info->variant == mb9afxx5)
+		|| (fm3_info->variant == mb9afxx6)
+		|| (fm3_info->variant == mb9afxx7)
+		|| (fm3_info->variant == mb9afxx8)) {
 		num_pages = 4;
 		bank->size = 256 * 1024; /* bytes */
 		bank->num_sectors = num_pages;
@@ -715,14 +726,14 @@ static int fm3_probe(struct flash_bank *bank)
 		bank->sectors[3].is_protected = -1;
 	}
 
-	if ((fm3_info->variant == MB9BFXX5)
-		|| (fm3_info->variant == MB9BFXX6)
-		|| (fm3_info->variant == MB9BFXX7)
-		|| (fm3_info->variant == MB9BFXX8)
-		|| (fm3_info->variant == MB9AFXX5)
-		|| (fm3_info->variant == MB9AFXX6)
-		|| (fm3_info->variant == MB9AFXX7)
-		|| (fm3_info->variant == MB9AFXX8)) {
+	if ((fm3_info->variant == mb9bfxx5)
+		|| (fm3_info->variant == mb9bfxx6)
+		|| (fm3_info->variant == mb9bfxx7)
+		|| (fm3_info->variant == mb9bfxx8)
+		|| (fm3_info->variant == mb9afxx5)
+		|| (fm3_info->variant == mb9afxx6)
+		|| (fm3_info->variant == mb9afxx7)
+		|| (fm3_info->variant == mb9afxx8)) {
 		num_pages = 5;
 		bank->size = 384 * 1024; /* bytes */
 		bank->num_sectors = num_pages;
@@ -733,12 +744,12 @@ static int fm3_probe(struct flash_bank *bank)
 		bank->sectors[4].is_protected = -1;
 	}
 
-	if ((fm3_info->variant == MB9BFXX6)
-		|| (fm3_info->variant == MB9BFXX7)
-		|| (fm3_info->variant == MB9BFXX8)
-		|| (fm3_info->variant == MB9AFXX6)
-		|| (fm3_info->variant == MB9AFXX7)
-		|| (fm3_info->variant == MB9AFXX8)) {
+	if ((fm3_info->variant == mb9bfxx6)
+		|| (fm3_info->variant == mb9bfxx7)
+		|| (fm3_info->variant == mb9bfxx8)
+		|| (fm3_info->variant == mb9afxx6)
+		|| (fm3_info->variant == mb9afxx7)
+		|| (fm3_info->variant == mb9afxx8)) {
 		num_pages = 6;
 		bank->size = 512 * 1024; /* bytes */
 		bank->num_sectors = num_pages;
@@ -749,10 +760,10 @@ static int fm3_probe(struct flash_bank *bank)
 		bank->sectors[5].is_protected = -1;
 	}
 
-	if ((fm3_info->variant == MB9BFXX7)
-		|| (fm3_info->variant == MB9BFXX8)
-		|| (fm3_info->variant == MB9AFXX7)
-		|| (fm3_info->variant == MB9AFXX8)) {
+	if ((fm3_info->variant == mb9bfxx7)
+		|| (fm3_info->variant == mb9bfxx8)
+		|| (fm3_info->variant == mb9afxx7)
+		|| (fm3_info->variant == mb9afxx8)) {
 		num_pages = 8;
 		bank->size = 768 * 1024; /* bytes */
 		bank->num_sectors = num_pages;
@@ -768,8 +779,8 @@ static int fm3_probe(struct flash_bank *bank)
 		bank->sectors[7].is_protected = -1;
 	}
 
-	if ((fm3_info->variant == MB9BFXX8)
-		|| (fm3_info->variant == MB9AFXX8)) {
+	if ((fm3_info->variant == mb9bfxx8)
+		|| (fm3_info->variant == mb9afxx8)) {
 		num_pages = 10;
 		bank->size = 1024 * 1024; /* bytes */
 		bank->num_sectors = num_pages;
@@ -785,7 +796,7 @@ static int fm3_probe(struct flash_bank *bank)
 		bank->sectors[9].is_protected = -1;
 	}
 
-	fm3_info->probed = true;
+	fm3_info->probed = 1;
 
 	return ERROR_OK;
 }
@@ -804,25 +815,25 @@ static int fm3_chip_erase(struct flash_bank *bank)
 	struct target *target = bank->target;
 	struct fm3_flash_bank *fm3_info2 = bank->driver_priv;
 	int retval = ERROR_OK;
-	uint32_t u32_dummy_read;
-	uint32_t u32_flash_type;
-	uint32_t u32_flash_seq_address1;
-	uint32_t u32_flash_seq_address2;
+	uint32_t u32DummyRead;
+	uint32_t u32FlashType;
+	uint32_t u32FlashSeqAddress1;
+	uint32_t u32FlashSeqAddress2;
 
 	struct working_area *write_algorithm;
 	struct reg_param reg_params[3];
 	struct armv7m_algorithm armv7m_info;
 
-	u32_flash_type = (uint32_t) fm3_info2->flashtype;
+	u32FlashType = (uint32_t) fm3_info2->flashtype;
 
-	if (u32_flash_type == FM3_FLASH_TYPE1) {
+	if (u32FlashType == fm3_flash_type1) {
 		LOG_INFO("*** Erasing mb9bfxxx type");
-		u32_flash_seq_address1 = 0x00001550;
-		u32_flash_seq_address2 = 0x00000AA8;
-	} else if (u32_flash_type == FM3_FLASH_TYPE2) {
+		u32FlashSeqAddress1 = 0x00001550;
+		u32FlashSeqAddress2 = 0x00000AA8;
+	} else if (u32FlashType == fm3_flash_type2) {
 		LOG_INFO("*** Erasing mb9afxxx type");
-		u32_flash_seq_address1 = 0x00000AA8;
-		u32_flash_seq_address2 = 0x00000554;
+		u32FlashSeqAddress1 = 0x00000AA8;
+		u32FlashSeqAddress2 = 0x00000554;
 	} else {
 		LOG_ERROR("Flash/Device type unknown!");
 		return ERROR_FLASH_OPERATION_FAILED;
@@ -879,7 +890,7 @@ static int fm3_chip_erase(struct flash_bank *bank)
 		return retval;
 
 	/* dummy read of FASZR */
-	retval = target_read_u32(target, 0x40000000, &u32_dummy_read);
+	retval = target_read_u32(target, 0x40000000, &u32DummyRead);
 	if (retval != ERROR_OK)
 		return retval;
 
@@ -897,11 +908,11 @@ static int fm3_chip_erase(struct flash_bank *bank)
 	armv7m_info.common_magic = ARMV7M_COMMON_MAGIC;
 	armv7m_info.core_mode = ARM_MODE_THREAD;
 
-	init_reg_param(&reg_params[0], "r0", 32, PARAM_OUT); /* u32_flash_seq_address1 */
-	init_reg_param(&reg_params[1], "r1", 32, PARAM_OUT); /* u32_flash_seq_address2 */
+	init_reg_param(&reg_params[0], "r0", 32, PARAM_OUT); /* u32FlashSeqAddress1 */
+	init_reg_param(&reg_params[1], "r1", 32, PARAM_OUT); /* u32FlashSeqAddress2 */
 
-	buf_set_u32(reg_params[0].value, 0, 32, u32_flash_seq_address1);
-	buf_set_u32(reg_params[1].value, 0, 32, u32_flash_seq_address2);
+	buf_set_u32(reg_params[0].value, 0, 32, u32FlashSeqAddress1);
+	buf_set_u32(reg_params[1].value, 0, 32, u32FlashSeqAddress2);
 
 	retval = target_run_algorithm(target, 0, NULL, 2, reg_params,
 			write_algorithm->address, 0, 100000, &armv7m_info);
@@ -916,7 +927,7 @@ static int fm3_chip_erase(struct flash_bank *bank)
 	destroy_reg_param(&reg_params[0]);
 	destroy_reg_param(&reg_params[1]);
 
-	retval = fm3_busy_wait(target, u32_flash_seq_address2, 20000);	/* 20s timeout */
+	retval = fm3_busy_wait(target, u32FlashSeqAddress2, 20000);	/* 20s timeout */
 	if (retval != ERROR_OK)
 		return retval;
 
@@ -925,25 +936,31 @@ static int fm3_chip_erase(struct flash_bank *bank)
 	if (retval != ERROR_OK)
 		return retval;
 
-	retval = target_read_u32(target, 0x40000000, &u32_dummy_read); /* dummy read of FASZR */
+	retval = target_read_u32(target, 0x40000000, &u32DummyRead); /* dummy read of FASZR */
 
 	return retval;
 }
 
 COMMAND_HANDLER(fm3_handle_chip_erase_command)
 {
+	int i;
+
 	if (CMD_ARGC < 1)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
 	struct flash_bank *bank;
 	int retval = CALL_COMMAND_HANDLER(flash_command_get_bank, 0, &bank);
-	if (retval != ERROR_OK)
+	if (ERROR_OK != retval)
 		return retval;
 
 	if (fm3_chip_erase(bank) == ERROR_OK) {
-		command_print(CMD, "fm3 chip erase complete");
+		/* set all sectors as erased */
+		for (i = 0; i < bank->num_sectors; i++)
+			bank->sectors[i].is_erased = 1;
+
+		command_print(CMD_CTX, "fm3 chip erase complete");
 	} else {
-		command_print(CMD, "fm3 chip erase failed");
+		command_print(CMD_CTX, "fm3 chip erase failed");
 	}
 
 	return ERROR_OK;

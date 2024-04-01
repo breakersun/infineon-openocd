@@ -1,20 +1,31 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2013 by Andes Technology                                *
  *   Hsiangkai Wang <hkwang@andestech.com>                                 *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
 
-#include <jtag/adapter.h>
 #include <jtag/interface.h>
 #include <jtag/commands.h>
 #include <transport/transport.h>
 #include <target/target.h>
 #include <jtag/aice/aice_transport.h>
+#include <jtag/drivers/libusb_common.h>
 #include "aice_usb.h"
 
 #define AICE_KHZ_TO_SPEED_MAP_SIZE	16
@@ -111,7 +122,7 @@ int aice_init_targets(void)
  */
 static int aice_init(void)
 {
-	if (aice_port->api->open(&param) != ERROR_OK) {
+	if (ERROR_OK != aice_port->api->open(&param)) {
 		LOG_ERROR("Cannot find AICE Interface! Please check "
 				"connection and permissions.");
 		return ERROR_JTAG_INIT_FAILED;
@@ -139,7 +150,7 @@ static int aice_execute_reset(struct jtag_command *cmd)
 	static int last_trst;
 	int retval = ERROR_OK;
 
-	LOG_DEBUG_IO("reset trst: %d", cmd->cmd.reset->trst);
+	DEBUG_JTAG_IO("reset trst: %d", cmd->cmd.reset->trst);
 
 	if (cmd->cmd.reset->trst != last_trst) {
 		if (cmd->cmd.reset->trst)
@@ -207,7 +218,7 @@ static int aice_khz(int khz, int *jtag_speed)
 	int i;
 	for (i = 0 ; i < AICE_KHZ_TO_SPEED_MAP_SIZE ; i++) {
 		if (khz == aice_khz_to_speed_map[i]) {
-			if (i >= 8)
+			if (8 <= i)
 				*jtag_speed = i | AICE_TCK_CONTROL_TCK3048;
 			else
 				*jtag_speed = i;
@@ -242,8 +253,8 @@ int aice_scan_jtag_chain(void)
 		return res;
 	}
 
-	for (unsigned int i = 0; i < num_of_idcode; i++)
-		LOG_DEBUG("id_codes[%u] = 0x%" PRIx32, i, aice_target_id_codes[i]);
+	for (uint32_t i = 0; i < num_of_idcode; i++)
+		LOG_DEBUG("id_codes[%d] = 0x%x", i, aice_target_id_codes[i]);
 
 	/* Update tap idcode */
 	for (target = all_targets; target; target = target->next)
@@ -258,10 +269,10 @@ COMMAND_HANDLER(aice_handle_aice_info_command)
 {
 	LOG_DEBUG("aice_handle_aice_info_command");
 
-	command_print(CMD, "Description: %s", param.device_desc);
-	command_print(CMD, "Serial number: %s", adapter_get_required_serial());
+	command_print(CMD_CTX, "Description: %s", param.device_desc);
+	command_print(CMD_CTX, "Serial number: %s", param.serial);
 	if (strncmp(aice_port->name, "aice_pipe", 9) == 0)
-		command_print(CMD, "Adapter: %s", param.adapter_name);
+		command_print(CMD_CTX, "Adapter: %s", param.adapter_name);
 
 	return ERROR_OK;
 }
@@ -294,6 +305,18 @@ COMMAND_HANDLER(aice_handle_aice_desc_command)
 		param.device_desc = strdup(CMD_ARGV[0]);
 	else
 		LOG_ERROR("expected exactly one argument to aice desc <description>");
+
+	return ERROR_OK;
+}
+
+COMMAND_HANDLER(aice_handle_aice_serial_command)
+{
+	LOG_DEBUG("aice_handle_aice_serial_command");
+
+	if (CMD_ARGC == 1)
+		param.serial = strdup(CMD_ARGV[0]);
+	else
+		LOG_ERROR("expected exactly one argument to aice serial <serial-number>");
 
 	return ERROR_OK;
 }
@@ -400,76 +423,83 @@ static const struct command_registration aice_subcommand_handlers[] = {
 		.handler = &aice_handle_aice_info_command,
 		.mode = COMMAND_EXEC,
 		.help = "show aice info",
-		.usage = "",
+		.usage = "aice info",
 	},
 	{
 		.name = "port",
 		.handler = &aice_handle_aice_port_command,
 		.mode = COMMAND_CONFIG,
 		.help = "set the port of the AICE",
-		.usage = "['aice_pipe'|'aice_usb']",
+		.usage = "aice port ['aice_pipe'|'aice_usb']",
 	},
 	{
 		.name = "desc",
 		.handler = &aice_handle_aice_desc_command,
 		.mode = COMMAND_CONFIG,
 		.help = "set the aice device description",
-		.usage = "[description string]",
+		.usage = "aice desc [desciption string]",
+	},
+	{
+		.name = "serial",
+		.handler = &aice_handle_aice_serial_command,
+		.mode = COMMAND_CONFIG,
+		.help = "set the serial number of the AICE device",
+		.usage = "aice serial [serial string]",
 	},
 	{
 		.name = "vid_pid",
 		.handler = &aice_handle_aice_vid_pid_command,
 		.mode = COMMAND_CONFIG,
 		.help = "the vendor and product ID of the AICE device",
-		.usage = "(vid pid)*",
+		.usage = "aice vid_pid (vid pid)*",
 	},
 	{
 		.name = "adapter",
 		.handler = &aice_handle_aice_adapter_command,
 		.mode = COMMAND_CONFIG,
 		.help = "set the file name of adapter",
-		.usage = "[adapter name]",
+		.usage = "aice adapter [adapter name]",
 	},
 	{
 		.name = "retry_times",
 		.handler = &aice_handle_aice_retry_times_command,
 		.mode = COMMAND_CONFIG,
 		.help = "set retry times as AICE timeout",
-		.usage = "num_of_retry",
+		.usage = "aice retry_times num_of_retry",
 	},
 	{
 		.name = "count_to_check_dbger",
 		.handler = &aice_handle_aice_count_to_check_dbger_command,
 		.mode = COMMAND_CONFIG,
 		.help = "set retry times as checking $DBGER status",
-		.usage = "count_of_checking",
+		.usage = "aice count_to_check_dbger count_of_checking",
 	},
 	{
 		.name = "custom_srst_script",
 		.handler = &aice_handle_aice_custom_srst_script_command,
 		.mode = COMMAND_CONFIG,
-		.usage = "script_file_name",
+		.usage = "custom_srst_script script_file_name",
 		.help = "set custom srst script",
 	},
 	{
 		.name = "custom_trst_script",
 		.handler = &aice_handle_aice_custom_trst_script_command,
 		.mode = COMMAND_CONFIG,
-		.usage = "script_file_name",
+		.usage = "custom_trst_script script_file_name",
 		.help = "set custom trst script",
 	},
 	{
 		.name = "custom_restart_script",
 		.handler = &aice_handle_aice_custom_restart_script_command,
 		.mode = COMMAND_CONFIG,
-		.usage = "script_file_name",
+		.usage = "custom_restart_script script_file_name",
 		.help = "set custom restart script",
 	},
 	{
 		.name = "reset",
 		.handler = &aice_handle_aice_reset_command,
 		.mode = COMMAND_EXEC,
-		.usage = "",
+		.usage = "aice reset",
 		.help = "reset AICE",
 	},
 	COMMAND_REGISTRATION_DONE
@@ -480,7 +510,7 @@ static const struct command_registration aice_command_handlers[] = {
 		.name = "aice",
 		.mode = COMMAND_ANY,
 		.help = "perform aice management",
-		.usage = "[subcommand]",
+		.usage = "aice [subcommand]",
 		.chain = aice_subcommand_handlers,
 	},
 	COMMAND_REGISTRATION_DONE
@@ -488,20 +518,14 @@ static const struct command_registration aice_command_handlers[] = {
 /***************************************************************************/
 /* End of Command handlers */
 
-static struct jtag_interface aice_interface = {
-	.execute_queue = aice_execute_queue,
-};
-
-struct adapter_driver aice_adapter_driver = {
+struct jtag_interface aice_interface = {
 	.name = "aice",
-	.transports = aice_transports,
 	.commands = aice_command_handlers,
-
+	.transports = aice_transports,
 	.init = aice_init,
 	.quit = aice_quit,
+	.execute_queue = aice_execute_queue,
 	.speed = aice_speed,		/* set interface speed */
-	.khz = aice_khz,		/* convert khz to interface speed value */
 	.speed_div = aice_speed_div,	/* return readable value */
-
-	.jtag_ops = &aice_interface,
+	.khz = aice_khz,		/* convert khz to interface speed value */
 };

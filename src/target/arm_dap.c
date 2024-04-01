@@ -1,7 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 /***************************************************************************
  *   Copyright (C) 2016 by Matthias Welwarsky                              *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program; if not, write to the                         *
+ *   Free Software Foundation, Inc.,                                       *
  *                                                                         *
  ***************************************************************************/
 
@@ -22,7 +34,7 @@ static LIST_HEAD(all_dap);
 
 extern const struct dap_ops swd_dap_ops;
 extern const struct dap_ops jtag_dp_ops;
-extern struct adapter_driver *adapter_driver;
+extern struct jtag_interface *jtag_interface;
 
 /* DAP command support */
 struct arm_dap_object {
@@ -38,16 +50,13 @@ static void dap_instance_init(struct adiv5_dap *dap)
 	/* Set up with safe defaults */
 	for (i = 0; i <= DP_APSEL_MAX; i++) {
 		dap->ap[i].dap = dap;
-		dap->ap[i].ap_num = DP_APSEL_INVALID;
+		dap->ap[i].ap_num = i;
 		/* memaccess_tck max is 255 */
 		dap->ap[i].memaccess_tck = 255;
 		/* Number of bits for tar autoincrement, impl. dep. at least 10 */
 		dap->ap[i].tar_autoincr_block = (1<<10);
 		/* default CSW value */
-		dap->ap[i].csw_default = CSW_AHB_DEFAULT;
-		dap->ap[i].cfg_reg = MEM_AP_REG_CFG_INVALID; /* mem_ap configuration reg (large physical addr, etc.) */
-		dap->ap[i].refcount = 0;
-		dap->ap[i].config_ap_never_release = false;
+		dap->ap[i].csw_default = CSW_DEFAULT;
 	}
 	INIT_LIST_HEAD(&dap->cmd_journal);
 	INIT_LIST_HEAD(&dap->cmd_pool);
@@ -109,41 +118,15 @@ static int dap_init_all(void)
 
 		if (transport_is_swd()) {
 			dap->ops = &swd_dap_ops;
-			obj->swd = adapter_driver->swd_ops;
-		} else if (transport_is_dapdirect_swd()) {
-			dap->ops = adapter_driver->dap_swd_ops;
-		} else if (transport_is_dapdirect_jtag()) {
-			dap->ops = adapter_driver->dap_jtag_ops;
+			obj->swd = jtag_interface->swd;
 		} else
 			dap->ops = &jtag_dp_ops;
 
-		if (dap->adi_version == 0) {
-			LOG_DEBUG("DAP %s configured by default to use ADIv5 protocol", jtag_tap_name(dap->tap));
-			dap->adi_version = 5;
-		} else {
-			LOG_DEBUG("DAP %s configured to use %s protocol by user cfg file", jtag_tap_name(dap->tap),
-				is_adiv6(dap) ? "ADIv6" : "ADIv5");
-		}
-
 		retval = dap->ops->connect(dap);
-		if (retval != ERROR_OK)
+		if (retval != ERROR_OK) {
+			LOG_ERROR("DAP '%s' initialization failed (check connection, power, etc.)",
+					  dap->tap->dotted_name);
 			return retval;
-
-		/* see if address size of ROM Table is greater than 32-bits */
-		if (is_adiv6(dap)) {
-			uint32_t dpidr1;
-
-			retval = dap->ops->queue_dp_read(dap, DP_DPIDR1, &dpidr1);
-			if (retval != ERROR_OK) {
-				LOG_ERROR("DAP read of DPIDR1 failed...");
-				return retval;
-			}
-			retval = dap_run(dap);
-			if (retval != ERROR_OK) {
-				LOG_ERROR("DAP read of DPIDR1 failed...");
-				return retval;
-			}
-			dap->asize = dpidr1 & DP_DPIDR1_ASIZE_MASK;
 		}
 	}
 
@@ -157,10 +140,6 @@ int dap_cleanup_all(void)
 
 	list_for_each_entry_safe(obj, tmp, &all_dap, lh) {
 		dap = &obj->dap;
-		for (unsigned int i = 0; i <= DP_APSEL_MAX; i++) {
-			if (dap->ap[i].refcount != 0)
-				LOG_ERROR("BUG: refcount AP#%u still %u at exit", i, dap->ap[i].refcount);
-		}
 		if (dap->ops && dap->ops->quit)
 			dap->ops->quit(dap);
 
@@ -174,159 +153,63 @@ int dap_cleanup_all(void)
 enum dap_cfg_param {
 	CFG_CHAIN_POSITION,
 	CFG_IGNORE_SYSPWRUPACK,
-	CFG_DP_ID,
-	CFG_INSTANCE_ID,
-	CFG_ADIV6,
-	CFG_ADIV5,
 };
 
-static const struct jim_nvp nvp_config_opts[] = {
-	{ .name = "-chain-position",     .value = CFG_CHAIN_POSITION },
+static const Jim_Nvp nvp_config_opts[] = {
+	{ .name = "-chain-position",   .value = CFG_CHAIN_POSITION },
 	{ .name = "-ignore-syspwrupack", .value = CFG_IGNORE_SYSPWRUPACK },
-	{ .name = "-dp-id",              .value = CFG_DP_ID },
-	{ .name = "-instance-id",        .value = CFG_INSTANCE_ID },
-	{ .name = "-adiv6",              .value = CFG_ADIV6 },
-	{ .name = "-adiv5",              .value = CFG_ADIV5 },
 	{ .name = NULL, .value = -1 }
 };
 
-static int dap_configure(struct jim_getopt_info *goi, struct arm_dap_object *dap)
+static int dap_configure(Jim_GetOptInfo *goi, struct arm_dap_object *dap)
 {
-	struct jim_nvp *n;
+	struct jtag_tap *tap = NULL;
+	Jim_Nvp *n;
 	int e;
 
-	/* parse config ... */
+	/* parse config or cget options ... */
 	while (goi->argc > 0) {
 		Jim_SetEmptyResult(goi->interp);
 
-		e = jim_getopt_nvp(goi, nvp_config_opts, &n);
+		e = Jim_GetOpt_Nvp(goi, nvp_config_opts, &n);
 		if (e != JIM_OK) {
-			jim_getopt_nvp_unknown(goi, nvp_config_opts, 0);
+			Jim_GetOpt_NvpUnknown(goi, nvp_config_opts, 0);
 			return e;
 		}
 		switch (n->value) {
 		case CFG_CHAIN_POSITION: {
 			Jim_Obj *o_t;
-			e = jim_getopt_obj(goi, &o_t);
+			e = Jim_GetOpt_Obj(goi, &o_t);
 			if (e != JIM_OK)
 				return e;
-
-			struct jtag_tap *tap;
 			tap = jtag_tap_by_jim_obj(goi->interp, o_t);
-			if (!tap) {
+			if (tap == NULL) {
 				Jim_SetResultString(goi->interp, "-chain-position is invalid", -1);
 				return JIM_ERR;
 			}
-			dap->dap.tap = tap;
 			/* loop for more */
 			break;
 		}
 		case CFG_IGNORE_SYSPWRUPACK:
 			dap->dap.ignore_syspwrupack = true;
 			break;
-		case CFG_DP_ID: {
-			jim_wide w;
-			e = jim_getopt_wide(goi, &w);
-			if (e != JIM_OK) {
-				Jim_SetResultFormatted(goi->interp,
-						"create %s: bad parameter %s",
-						dap->name, n->name);
-				return JIM_ERR;
-			}
-			if (w < 0 || w > DP_TARGETSEL_DPID_MASK) {
-				Jim_SetResultFormatted(goi->interp,
-						"create %s: %s out of range",
-						dap->name, n->name);
-				return JIM_ERR;
-			}
-			dap->dap.multidrop_targetsel =
-				(dap->dap.multidrop_targetsel & DP_TARGETSEL_INSTANCEID_MASK)
-				| (w & DP_TARGETSEL_DPID_MASK);
-			dap->dap.multidrop_dp_id_valid = true;
-			break;
-		}
-		case CFG_INSTANCE_ID: {
-			jim_wide w;
-			e = jim_getopt_wide(goi, &w);
-			if (e != JIM_OK) {
-				Jim_SetResultFormatted(goi->interp,
-						"create %s: bad parameter %s",
-						dap->name, n->name);
-				return JIM_ERR;
-			}
-			if (w < 0 || w > 15) {
-				Jim_SetResultFormatted(goi->interp,
-						"create %s: %s out of range",
-						dap->name, n->name);
-				return JIM_ERR;
-			}
-			dap->dap.multidrop_targetsel =
-				(dap->dap.multidrop_targetsel & DP_TARGETSEL_DPID_MASK)
-				| ((w << DP_TARGETSEL_INSTANCEID_SHIFT) & DP_TARGETSEL_INSTANCEID_MASK);
-			dap->dap.multidrop_instance_id_valid = true;
-			break;
-		}
-		case CFG_ADIV6:
-			dap->dap.adi_version = 6;
-			break;
-		case CFG_ADIV5:
-			dap->dap.adi_version = 5;
-			break;
 		default:
 			break;
 		}
 	}
 
+	if (tap == NULL) {
+		Jim_SetResultString(goi->interp, "-chain-position required when creating DAP", -1);
+		return JIM_ERR;
+	}
+
+	dap_instance_init(&dap->dap);
+	dap->dap.tap = tap;
+
 	return JIM_OK;
 }
 
-static int dap_check_config(struct adiv5_dap *dap)
-{
-	if (transport_is_jtag() || transport_is_dapdirect_jtag() || transport_is_hla())
-		return ERROR_OK;
-
-	struct arm_dap_object *obj;
-	bool new_multidrop = dap_is_multidrop(dap);
-	bool had_multidrop = new_multidrop;
-	uint32_t targetsel = dap->multidrop_targetsel;
-	unsigned int non_multidrop_count = had_multidrop ? 0 : 1;
-
-	list_for_each_entry(obj, &all_dap, lh) {
-		struct adiv5_dap *dap_it = &obj->dap;
-
-		if (transport_is_swd()) {
-			if (dap_is_multidrop(dap_it)) {
-				had_multidrop = true;
-				if (new_multidrop && dap_it->multidrop_targetsel == targetsel) {
-					uint32_t dp_id = targetsel & DP_TARGETSEL_DPID_MASK;
-					uint32_t instance_id = targetsel >> DP_TARGETSEL_INSTANCEID_SHIFT;
-					LOG_ERROR("%s and %s have the same multidrop selectors -dp-id 0x%08"
-							  PRIx32 " and -instance-id 0x%" PRIx32,
-							  obj->name, adiv5_dap_name(dap),
-							  dp_id, instance_id);
-					return ERROR_FAIL;
-				}
-			} else {
-				non_multidrop_count++;
-			}
-		} else if (transport_is_dapdirect_swd()) {
-			non_multidrop_count++;
-		}
-	}
-
-	if (non_multidrop_count > 1) {
-		LOG_ERROR("Two or more SWD non multidrop DAPs are not supported");
-		return ERROR_FAIL;
-	}
-	if (had_multidrop && non_multidrop_count) {
-		LOG_ERROR("Mixing of SWD multidrop DAPs and non multidrop DAPs is not supported");
-		return ERROR_FAIL;
-	}
-
-	return ERROR_OK;
-}
-
-static int dap_create(struct jim_getopt_info *goi)
+static int dap_create(Jim_GetOptInfo *goi)
 {
 	struct command_context *cmd_ctx;
 	static struct arm_dap_object *dap;
@@ -336,16 +219,16 @@ static int dap_create(struct jim_getopt_info *goi)
 	int e;
 
 	cmd_ctx = current_command_context(goi->interp);
-	assert(cmd_ctx);
+	assert(cmd_ctx != NULL);
 
 	if (goi->argc < 3) {
 		Jim_WrongNumArgs(goi->interp, 1, goi->argv, "?name? ..options...");
 		return JIM_ERR;
 	}
 	/* COMMAND */
-	jim_getopt_obj(goi, &new_cmd);
+	Jim_GetOpt_Obj(goi, &new_cmd);
 	/* does this command exist? */
-	cmd = Jim_GetCommand(goi->interp, new_cmd, JIM_NONE);
+	cmd = Jim_GetCommand(goi->interp, new_cmd, JIM_ERRMSG);
 	if (cmd) {
 		cp = Jim_GetString(new_cmd, NULL);
 		Jim_SetResultFormatted(goi->interp, "Command: %s Exists", cp);
@@ -354,31 +237,19 @@ static int dap_create(struct jim_getopt_info *goi)
 
 	/* Create it */
 	dap = calloc(1, sizeof(struct arm_dap_object));
-	if (!dap)
+	if (dap == NULL)
 		return JIM_ERR;
 
-	dap_instance_init(&dap->dap);
+	e = dap_configure(goi, dap);
+	if (e != JIM_OK) {
+		free(dap);
+		return e;
+	}
 
 	cp = Jim_GetString(new_cmd, NULL);
 	dap->name = strdup(cp);
 
-	e = dap_configure(goi, dap);
-	if (e != JIM_OK)
-		goto err;
-
-	if (!dap->dap.tap) {
-		Jim_SetResultString(goi->interp, "-chain-position required when creating DAP", -1);
-		e = JIM_ERR;
-		goto err;
-	}
-
-	e = dap_check_config(&dap->dap);
-	if (e != ERROR_OK) {
-		e = JIM_ERR;
-		goto err;
-	}
-
-	struct command_registration dap_create_commands[] = {
+	struct command_registration dap_commands[] = {
 		{
 			.name = cp,
 			.mode = COMMAND_ANY,
@@ -391,28 +262,25 @@ static int dap_create(struct jim_getopt_info *goi)
 
 	/* don't expose the instance commands when using hla */
 	if (transport_is_hla())
-		dap_create_commands[0].chain = NULL;
+		dap_commands[0].chain = NULL;
 
-	e = register_commands_with_data(cmd_ctx, NULL, dap_create_commands, dap);
-	if (e != ERROR_OK) {
-		e = JIM_ERR;
-		goto err;
-	}
+	e = register_commands(cmd_ctx, NULL, dap_commands);
+	if (ERROR_OK != e)
+		return JIM_ERR;
+
+	struct command *c = command_find_in_context(cmd_ctx, cp);
+	assert(c);
+	command_set_handler_data(c, dap);
 
 	list_add_tail(&dap->lh, &all_dap);
 
-	return JIM_OK;
-
-err:
-	free(dap->name);
-	free(dap);
-	return e;
+	return (ERROR_OK == e) ? JIM_OK : JIM_ERR;
 }
 
 static int jim_dap_create(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 {
-	struct jim_getopt_info goi;
-	jim_getopt_setup(&goi, interp, argc - 1, argv + 1);
+	Jim_GetOptInfo goi;
+	Jim_GetOpt_Setup(&goi, interp, argc - 1, argv + 1);
 	if (goi.argc < 2) {
 		Jim_WrongNumArgs(goi.interp, goi.argc, goi.argv,
 			"<name> [<dap_options> ...]");
@@ -447,9 +315,9 @@ COMMAND_HANDLER(handle_dap_info_command)
 	struct target *target = get_current_target(CMD_CTX);
 	struct arm *arm = target_to_arm(target);
 	struct adiv5_dap *dap = arm->dap;
-	uint64_t apsel;
+	uint32_t apsel;
 
-	if (!dap) {
+	if (dap == NULL) {
 		LOG_ERROR("DAP instance not available. Probably a HLA target...");
 		return ERROR_TARGET_RESOURCE_NOT_AVAILABLE;
 	}
@@ -459,34 +327,15 @@ COMMAND_HANDLER(handle_dap_info_command)
 			apsel = dap->apsel;
 			break;
 		case 1:
-			if (!strcmp(CMD_ARGV[0], "root")) {
-				if (!is_adiv6(dap)) {
-					command_print(CMD, "Option \"root\" not allowed with ADIv5 DAP");
-					return ERROR_COMMAND_ARGUMENT_INVALID;
-				}
-				int retval = adiv6_dap_read_baseptr(CMD, dap, &apsel);
-				if (retval != ERROR_OK) {
-					command_print(CMD, "Failed reading DAP baseptr");
-					return retval;
-				}
-				break;
-			}
-			COMMAND_PARSE_NUMBER(u64, CMD_ARGV[0], apsel);
-			if (!is_ap_num_valid(dap, apsel))
+			COMMAND_PARSE_NUMBER(u32, CMD_ARGV[0], apsel);
+			if (apsel > DP_APSEL_MAX)
 				return ERROR_COMMAND_SYNTAX_ERROR;
 			break;
 		default:
 			return ERROR_COMMAND_SYNTAX_ERROR;
 	}
 
-	struct adiv5_ap *ap = dap_get_ap(dap, apsel);
-	if (!ap) {
-		command_print(CMD, "Cannot get AP");
-		return ERROR_FAIL;
-	}
-	int retval = dap_info_command(CMD, ap);
-	dap_put_ap(ap);
-	return retval;
+	return dap_info_command(CMD_CTX, &dap->ap[apsel]);
 }
 
 static const struct command_registration dap_subcommand_handlers[] = {
@@ -515,9 +364,9 @@ static const struct command_registration dap_subcommand_handlers[] = {
 		.name = "info",
 		.handler = handle_dap_info_command,
 		.mode = COMMAND_EXEC,
-		.help = "display ROM table for specified MEM-AP (default MEM-AP of current target) "
-			"or the ADIv6 root ROM table of current target's DAP",
-		.usage = "[ap_num | 'root']",
+		.help = "display ROM table for MEM-AP of current target "
+		"(default currently selected AP)",
+		.usage = "[ap_num]",
 	},
 	COMMAND_REGISTRATION_DONE
 };
