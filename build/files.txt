@@ -1,0 +1,1 @@
+psoc4.a1::C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c

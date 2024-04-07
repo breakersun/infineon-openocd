@@ -1,0 +1,353 @@
+<?xml version="1.0"?>
+<analyzerinfo hash="12365269933193990139">
+        <error id="missingIncludeSystem" severity="information" msg="Include file: &lt;stdbool.h&gt; not found. Please note: Cppcheck does not need standard library headers to get proper results." verbose="Include file: &lt;stdbool.h&gt; not found. Please note: Cppcheck does not need standard library headers to get proper results.">
+            <location file="C:\Users\403283\Code\microsoft-openocd\openocd\src\flash\nor\imp.h" line="10" column="0"/>
+        </error>
+        <error id="missingIncludeSystem" severity="information" msg="Include file: &lt;flash/common.h&gt; not found. Please note: Cppcheck does not need standard library headers to get proper results." verbose="Include file: &lt;flash/common.h&gt; not found. Please note: Cppcheck does not need standard library headers to get proper results.">
+            <location file="C:\Users\403283\Code\microsoft-openocd\openocd\src\flash\nor\core.h" line="14" column="0"/>
+        </error>
+        <error id="missingIncludeSystem" severity="information" msg="Include file: &lt;target/target.h&gt; not found. Please note: Cppcheck does not need standard library headers to get proper results." verbose="Include file: &lt;target/target.h&gt; not found. Please note: Cppcheck does not need standard library headers to get proper results.">
+            <location file="C:\Users\403283\Code\microsoft-openocd\openocd\src\flash\nor\imp.h" line="16" column="0"/>
+        </error>
+        <error id="missingInclude" severity="information" msg="Include file: &quot;flash/progress.h&quot; not found." verbose="Include file: &quot;flash/progress.h&quot; not found.">
+            <location file="C:\Users\403283\Code\microsoft-openocd\openocd\src\flash\nor\psoc4.c" line="24" column="0"/>
+        </error>
+        <error id="missingInclude" severity="information" msg="Include file: &quot;helper/time_support.h&quot; not found." verbose="Include file: &quot;helper/time_support.h&quot; not found.">
+            <location file="C:\Users\403283\Code\microsoft-openocd\openocd\src\flash\nor\psoc4.c" line="25" column="0"/>
+        </error>
+        <error id="missingInclude" severity="information" msg="Include file: &quot;target/algorithm.h&quot; not found." verbose="Include file: &quot;target/algorithm.h&quot; not found.">
+            <location file="C:\Users\403283\Code\microsoft-openocd\openocd\src\flash\nor\psoc4.c" line="26" column="0"/>
+        </error>
+        <error id="missingInclude" severity="information" msg="Include file: &quot;target/arm_adi_v5.h&quot; not found." verbose="Include file: &quot;target/arm_adi_v5.h&quot; not found.">
+            <location file="C:\Users\403283\Code\microsoft-openocd\openocd\src\flash\nor\psoc4.c" line="27" column="0"/>
+        </error>
+        <error id="missingInclude" severity="information" msg="Include file: &quot;target/breakpoints.h&quot; not found." verbose="Include file: &quot;target/breakpoints.h&quot; not found.">
+            <location file="C:\Users\403283\Code\microsoft-openocd\openocd\src\flash\nor\psoc4.c" line="28" column="0"/>
+        </error>
+        <error id="missingInclude" severity="information" msg="Include file: &quot;target/cortex_m.h&quot; not found." verbose="Include file: &quot;target/cortex_m.h&quot; not found.">
+            <location file="C:\Users\403283\Code\microsoft-openocd\openocd\src\flash\nor\psoc4.c" line="29" column="0"/>
+        </error>
+        <error id="missingInclude" severity="information" msg="Include file: &quot;target/register.h&quot; not found." verbose="Include file: &quot;target/register.h&quot; not found.">
+            <location file="C:\Users\403283\Code\microsoft-openocd\openocd\src\flash\nor\psoc4.c" line="30" column="0"/>
+        </error>
+        <error id="allocaCalled" severity="warning" msg="Obsolete function &apos;alloca&apos; called. In C99 and later it is recommended to use a variable length array instead." verbose="The obsolete function &apos;alloca&apos; is called. In C99 and later it is recommended to use a variable length array or a dynamically allocated array instead. The function &apos;alloca&apos; is dangerous for many reasons (http://stackoverflow.com/questions/1018853/why-is-alloca-not-considered-good-practice and http://linux.die.net/man/3/alloca)." file0="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c">
+            <location file="C:\Users\403283\Code\microsoft-openocd\openocd\src\flash\nor\psoc4.c" line="1434" column="31"/>
+            <symbol>alloca</symbol>
+        </error>
+        <error id="invalidPrintfArgType_sint" severity="warning" msg="%d in format string (no. 1) requires &apos;int&apos; but the argument type is &apos;unsigned int&apos;." verbose="%d in format string (no. 1) requires &apos;int&apos; but the argument type is &apos;unsigned int&apos;." cwe="686" file0="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c">
+            <location file="C:\Users\403283\Code\microsoft-openocd\openocd\src\flash\nor\psoc4.c" line="1515" column="3"/>
+        </error>
+        <error id="clarifyCalculation" severity="style" msg="Clarify calculation precedence for &apos;&amp;&apos; and &apos;?&apos;." verbose="Suspicious calculation. Please use parentheses to clarify the code. The code &apos;&apos;a&amp;b?c:d&apos;&apos; should be written as either &apos;&apos;(a&amp;b)?c:d&apos;&apos; or &apos;&apos;a&amp;(b?c:d)&apos;&apos;." cwe="783" file0="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c">
+            <location file="C:\Users\403283\Code\microsoft-openocd\openocd\src\flash\nor\psoc4.c" line="301" column="55"/>
+        </error>
+        <error id="clarifyCalculation" severity="style" msg="Clarify calculation precedence for &apos;&amp;&apos; and &apos;?&apos;." verbose="Suspicious calculation. Please use parentheses to clarify the code. The code &apos;&apos;a&amp;b?c:d&apos;&apos; should be written as either &apos;&apos;(a&amp;b)?c:d&apos;&apos; or &apos;&apos;a&amp;(b?c:d)&apos;&apos;." cwe="783" file0="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c">
+            <location file="C:\Users\403283\Code\microsoft-openocd\openocd\src\flash\nor\psoc4.c" line="671" column="72"/>
+        </error>
+        <error id="clarifyCalculation" severity="style" msg="Clarify calculation precedence for &apos;&amp;&apos; and &apos;?&apos;." verbose="Suspicious calculation. Please use parentheses to clarify the code. The code &apos;&apos;a&amp;b?c:d&apos;&apos; should be written as either &apos;&apos;(a&amp;b)?c:d&apos;&apos; or &apos;&apos;a&amp;(b?c:d)&apos;&apos;." cwe="783" file0="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c">
+            <location file="C:\Users\403283\Code\microsoft-openocd\openocd\src\flash\nor\psoc4.c" line="1089" column="69"/>
+        </error>
+        <error id="clarifyCalculation" severity="style" msg="Clarify calculation precedence for &apos;&amp;&apos; and &apos;?&apos;." verbose="Suspicious calculation. Please use parentheses to clarify the code. The code &apos;&apos;a&amp;b?c:d&apos;&apos; should be written as either &apos;&apos;(a&amp;b)?c:d&apos;&apos; or &apos;&apos;a&amp;(b?c:d)&apos;&apos;." cwe="783" file0="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c">
+            <location file="C:\Users\403283\Code\microsoft-openocd\openocd\src\flash\nor\psoc4.c" line="1446" column="73"/>
+        </error>
+        <error id="clarifyCalculation" severity="style" msg="Clarify calculation precedence for &apos;&amp;&apos; and &apos;?&apos;." verbose="Suspicious calculation. Please use parentheses to clarify the code. The code &apos;&apos;a&amp;b?c:d&apos;&apos; should be written as either &apos;&apos;(a&amp;b)?c:d&apos;&apos; or &apos;&apos;a&amp;(b?c:d)&apos;&apos;." cwe="783" file0="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c">
+            <location file="C:\Users\403283\Code\microsoft-openocd\openocd\src\flash\nor\psoc4.c" line="1581" column="70"/>
+        </error>
+        <error id="constParameterPointer" severity="style" msg="Parameter &apos;bank&apos; can be declared as pointer to const" verbose="Parameter &apos;bank&apos; can be declared as pointer to const" cwe="398" file0="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c">
+            <location file="C:\Users\403283\Code\microsoft-openocd\openocd\src\flash\nor\psoc4.c" line="226" column="54" info="Parameter &apos;bank&apos; can be declared as pointer to const"/>
+            <symbol>bank</symbol>
+        </error>
+        <error id="constParameterPointer" severity="style" msg="Parameter &apos;bank&apos; can be declared as pointer to const" verbose="Parameter &apos;bank&apos; can be declared as pointer to const" cwe="398" file0="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c">
+            <location file="C:\Users\403283\Code\microsoft-openocd\openocd\src\flash\nor\psoc4.c" line="231" column="54" info="Parameter &apos;bank&apos; can be declared as pointer to const"/>
+            <symbol>bank</symbol>
+        </error>
+        <error id="constParameterPointer" severity="style" msg="Parameter &apos;bank&apos; can be declared as pointer to const" verbose="Parameter &apos;bank&apos; can be declared as pointer to const" cwe="398" file0="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c">
+            <location file="C:\Users\403283\Code\microsoft-openocd\openocd\src\flash\nor\psoc4.c" line="236" column="54" info="Parameter &apos;bank&apos; can be declared as pointer to const"/>
+            <symbol>bank</symbol>
+        </error>
+        <error id="constParameterPointer" severity="style" msg="Parameter &apos;bank&apos; can be declared as pointer to const" verbose="Parameter &apos;bank&apos; can be declared as pointer to const" cwe="398" file0="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c">
+            <location file="C:\Users\403283\Code\microsoft-openocd\openocd\src\flash\nor\psoc4.c" line="241" column="54" info="Parameter &apos;bank&apos; can be declared as pointer to const"/>
+            <symbol>bank</symbol>
+        </error>
+        <error id="constParameterPointer" severity="style" msg="Parameter &apos;bank&apos; can be declared as pointer to const" verbose="Parameter &apos;bank&apos; can be declared as pointer to const" cwe="398" file0="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c">
+            <location file="C:\Users\403283\Code\microsoft-openocd\openocd\src\flash\nor\psoc4.c" line="246" column="53" info="Parameter &apos;bank&apos; can be declared as pointer to const"/>
+            <symbol>bank</symbol>
+        </error>
+        <error id="constVariablePointer" severity="style" msg="Variable &apos;p4_info&apos; can be declared as pointer to const" verbose="Variable &apos;p4_info&apos; can be declared as pointer to const" cwe="398" file0="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c">
+            <location file="C:\Users\403283\Code\microsoft-openocd\openocd\src\flash\nor\psoc4.c" line="906" column="21" info="Variable &apos;p4_info&apos; can be declared as pointer to const"/>
+            <symbol>p4_info</symbol>
+        </error>
+        <error id="constVariablePointer" severity="style" msg="Variable &apos;info&apos; can be declared as pointer to const" verbose="Variable &apos;info&apos; can be declared as pointer to const" cwe="398" file0="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c">
+            <location file="C:\Users\403283\Code\microsoft-openocd\openocd\src\flash\nor\psoc4.c" line="1366" column="22" info="Variable &apos;info&apos; can be declared as pointer to const"/>
+            <symbol>info</symbol>
+        </error>
+        <error id="unreadVariable" severity="style" msg="Variable &apos;hr&apos; is assigned a value that is never used." verbose="Variable &apos;hr&apos; is assigned a value that is never used." cwe="563" file0="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c">
+            <location file="C:\Users\403283\Code\microsoft-openocd\openocd\src\flash\nor\psoc4.c" line="1855" column="9"/>
+            <symbol>hr</symbol>
+        </error>
+  <FileInfo check="ctu">
+<function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/core.h:276:5" call-funcname="get_flash_bank_by_addr" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="279" col="33" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/core.h:276:5" call-funcname="get_flash_bank_by_addr" call-argnr="4" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="279" col="33" call-argexpr="&amp;bank" call-argvaluetype="7" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="4" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="570" col="23" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="5" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="570" col="23" call-argexpr="NULL" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="6" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="570" col="23" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="7" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="570" col="23" call-argexpr="NULL" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="4" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="607" col="20" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="5" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="607" col="20" call-argexpr="NULL" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="6" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="607" col="20" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="7" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="607" col="20" call-argexpr="NULL" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="3" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="750" col="19" call-argexpr="0x00" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="4" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="750" col="19" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="5" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="750" col="19" call-argexpr="NULL" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="6" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="750" col="19" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="7" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="750" col="19" call-argexpr="&amp;part0" call-argvaluetype="7" call-argvalue="4"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/core.h:276:5" call-funcname="get_flash_bank_by_addr" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="864" col="30" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/core.h:276:5" call-funcname="get_flash_bank_by_addr" call-argnr="4" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="864" col="30" call-argexpr="&amp;main_bank" call-argvaluetype="7" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/core.h:285:22" call-funcname="alloc_block_array" call-argnr="1" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="871" col="36" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/core.h:285:22" call-funcname="alloc_block_array" call-argnr="1" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="876" col="36" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/core.h:285:22" call-funcname="alloc_block_array" call-argnr="1" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="883" col="36" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/core.h:276:5" call-funcname="get_flash_bank_by_addr" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="923" col="33" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/core.h:276:5" call-funcname="get_flash_bank_by_addr" call-argnr="4" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="923" col="33" call-argexpr="&amp;bank" call-argvaluetype="7" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/core.h:276:5" call-funcname="get_flash_bank_by_addr" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="962" col="33" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/core.h:276:5" call-funcname="get_flash_bank_by_addr" call-argnr="4" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="962" col="33" call-argexpr="&amp;bank" call-argvaluetype="7" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="7" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="977" col="20" call-argexpr="NULL" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="5" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="984" col="15" call-argexpr="NULL" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="6" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="984" col="15" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="7" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="984" col="15" call-argexpr="NULL" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:918:12" call-funcname="psoc4_read_row_protection" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1014" col="36" call-argexpr="&amp;prot_array" call-argvaluetype="7" call-argvalue="1"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:918:12" call-funcname="psoc4_read_row_protection" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1052" col="37" call-argexpr="&amp;flash_prot" call-argvaluetype="7" call-argvalue="1"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:918:12" call-funcname="psoc4_read_row_protection" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1084" col="36" call-argexpr="&amp;prot_data" call-argvaluetype="7" call-argvalue="1"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="4" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1187" col="20" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="5" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1187" col="20" call-argexpr="NULL" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="6" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1187" col="20" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="7" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1187" col="20" call-argexpr="NULL" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:918:12" call-funcname="psoc4_read_row_protection" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1272" col="37" call-argexpr="&amp;flash_prot" call-argvaluetype="7" call-argvalue="1"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:741:12" call-funcname="psoc4_sysreq_silicon_id" call-argnr="3" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1285" col="35" call-argexpr="NULL" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:741:12" call-funcname="psoc4_sysreq_silicon_id" call-argnr="4" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1285" col="35" call-argexpr="NULL" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:741:12" call-funcname="psoc4_sysreq_silicon_id" call-argnr="5" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1285" col="35" call-argexpr="&amp;current_prot" call-argvaluetype="7" call-argvalue="1"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:918:12" call-funcname="psoc4_read_row_protection" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1298" col="34" call-argexpr="&amp;row_protection" call-argvaluetype="7" call-argvalue="1"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:322:12" call-funcname="psoc4_read_family" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1326" col="28" call-argexpr="&amp;psoc4_info" call-argvaluetype="7" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:741:12" call-funcname="psoc4_sysreq_silicon_id" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1331" col="30" call-argexpr="&amp;psoc4_info" call-argvaluetype="7" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:741:12" call-funcname="psoc4_sysreq_silicon_id" call-argnr="3" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1331" col="30" call-argexpr="NULL" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:741:12" call-funcname="psoc4_sysreq_silicon_id" call-argnr="4" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1331" col="30" call-argexpr="NULL" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:741:12" call-funcname="psoc4_sysreq_silicon_id" call-argnr="5" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1331" col="30" call-argexpr="&amp;protection" call-argvaluetype="7" call-argvalue="1"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:566:12" call-funcname="psoc4_sysreq_prepare" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1335" col="27" call-argexpr="&amp;psoc4_info" call-argvaluetype="7" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1341" col="20" call-argexpr="&amp;psoc4_info" call-argvaluetype="7" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="5" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1341" col="20" call-argexpr="NULL" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="6" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1341" col="20" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="7" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1341" col="20" call-argexpr="NULL" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1348" col="20" call-argexpr="&amp;psoc4_info" call-argvaluetype="7" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="4" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1348" col="20" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="5" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1348" col="20" call-argexpr="ram_param" call-argvaluetype="7" call-argvalue="4"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="7" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1348" col="20" call-argexpr="NULL" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:634:13" call-funcname="psoc4_sysreq_release" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1351" col="22" call-argexpr="&amp;psoc4_info" call-argvaluetype="7" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/core.h:276:5" call-funcname="get_flash_bank_by_addr" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1375" col="34" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/core.h:276:5" call-funcname="get_flash_bank_by_addr" call-argnr="4" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1375" col="34" call-argexpr="&amp;main_bank" call-argvaluetype="7" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:1004:12" call-funcname="psoc4_protect" call-argnr="3" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1378" col="23" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="5" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1410" col="19" call-argexpr="NULL" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="6" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1410" col="19" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" call-funcname="psoc4_sysreq" call-argnr="7" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1410" col="19" call-argexpr="&amp;status" call-argvaluetype="7" call-argvalue="4"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/core.h:276:5" call-funcname="get_flash_bank_by_addr" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1440" col="34" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/core.h:276:5" call-funcname="get_flash_bank_by_addr" call-argnr="4" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1440" col="34" call-argexpr="&amp;bank" call-argvaluetype="7" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:741:12" call-funcname="psoc4_sysreq_silicon_id" call-argnr="3" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1469" col="31" call-argexpr="&amp;si_siid" call-argvaluetype="7" call-argvalue="4"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:741:12" call-funcname="psoc4_sysreq_silicon_id" call-argnr="4" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1469" col="31" call-argexpr="NULL" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:741:12" call-funcname="psoc4_sysreq_silicon_id" call-argnr="5" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1469" col="31" call-argexpr="&amp;prot" call-argvaluetype="7" call-argvalue="1"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:741:12" call-funcname="psoc4_sysreq_silicon_id" call-argnr="3" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1546" col="34" call-argexpr="&amp;silicon_id" call-argvaluetype="7" call-argvalue="4"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:741:12" call-funcname="psoc4_sysreq_silicon_id" call-argnr="4" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1546" col="34" call-argexpr="NULL" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:741:12" call-funcname="psoc4_sysreq_silicon_id" call-argnr="5" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1546" col="34" call-argexpr="&amp;protection" call-argvaluetype="7" call-argvalue="1"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:918:12" call-funcname="psoc4_read_row_protection" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1571" col="37" call-argexpr="&amp;flash_prot" call-argvaluetype="7" call-argvalue="1"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:1362:12" call-funcname="psoc4_erase" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1662" col="19" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/core.h:276:5" call-funcname="get_flash_bank_by_addr" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1684" col="33" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/core.h:276:5" call-funcname="get_flash_bank_by_addr" call-argnr="4" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1684" col="33" call-argexpr="&amp;mflash_bank" call-argvaluetype="7" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:741:12" call-funcname="psoc4_sysreq_silicon_id" call-argnr="3" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1690" col="30" call-argexpr="NULL" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:741:12" call-funcname="psoc4_sysreq_silicon_id" call-argnr="4" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1690" col="30" call-argexpr="NULL" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:741:12" call-funcname="psoc4_sysreq_silicon_id" call-argnr="5" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1690" col="30" call-argexpr="&amp;protection" call-argvaluetype="7" call-argvalue="1"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:918:12" call-funcname="psoc4_read_row_protection" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1700" col="32" call-argexpr="&amp;row_protection" call-argvaluetype="7" call-argvalue="1"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/core.h:276:5" call-funcname="get_flash_bank_by_addr" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1736" col="29" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/core.h:276:5" call-funcname="get_flash_bank_by_addr" call-argnr="4" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1736" col="29" call-argexpr="&amp;main_flash" call-argvaluetype="7" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:1800:20" call-funcname="psoc4_alloc_bank" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1858" col="32" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/core.h:276:5" call-funcname="get_flash_bank_by_addr" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1897" col="33" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/core.h:276:5" call-funcname="get_flash_bank_by_addr" call-argnr="4" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1897" col="33" call-argexpr="&amp;bank" call-argvaluetype="7" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:322:12" call-funcname="psoc4_read_family" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1902" col="24" call-argexpr="&amp;p4_info" call-argvaluetype="7" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:377:12" call-funcname="psoc4_read_geometry" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1909" col="27" call-argexpr="&amp;p4_info" call-argvaluetype="7" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:1852:12" call-funcname="maybe_add_sflash_bank" call-argnr="3" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1921" col="29" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:1800:20" call-funcname="psoc4_alloc_bank" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1934" col="22" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:1800:20" call-funcname="psoc4_alloc_bank" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1936" col="22" call-argexpr="0" call-argvaluetype="0" call-argvalue="0"/><function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/core.h:276:5" call-funcname="get_flash_bank_by_addr" call-argnr="1" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="279" col="11" my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:276:12" my-argnr="1"/>
+<function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:566:12" call-funcname="psoc4_sysreq_prepare" call-argnr="1" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="746" col="11" my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:741:12" my-argnr="1"/>
+<function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:566:12" call-funcname="psoc4_sysreq_prepare" call-argnr="2" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="746" col="11" my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:741:12" my-argnr="2"/>
+<function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/core.h:276:5" call-funcname="get_flash_bank_by_addr" call-argnr="1" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="923" col="11" my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:918:12" my-argnr="1"/>
+<function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/core.h:276:5" call-funcname="get_flash_bank_by_addr" call-argnr="1" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="962" col="11" my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:959:12" my-argnr="1"/>
+<function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:226:20" call-funcname="is_mflash_bank" call-argnr="1" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1006" col="7" my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:1004:12" my-argnr="1"/>
+<function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:246:20" call-funcname="is_chipp_bank" call-argnr="1" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1043" col="6" my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:1042:12" my-argnr="1"/>
+<function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:226:20" call-funcname="is_mflash_bank" call-argnr="1" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1077" col="7" my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:1075:12" my-argnr="1"/>
+<function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:251:20" call-funcname="is_psoc4hv" call-argnr="1" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1118" col="6" my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:1105:12" my-argnr="1"/>
+<function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:241:20" call-funcname="is_flashp_bank" call-argnr="1" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1270" col="6" my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:1268:12" my-argnr="1"/>
+<function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:322:12" call-funcname="psoc4_read_family" call-argnr="1" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1326" col="11" my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:1322:12" my-argnr="1"/>
+<function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:236:20" call-funcname="is_sflash_bank" call-argnr="1" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1365" col="6" my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:1362:12" my-argnr="1"/>
+<function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/core.h:276:5" call-funcname="get_flash_bank_by_addr" call-argnr="1" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1440" col="12" my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:1429:12" my-argnr="1"/>
+<function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:241:20" call-funcname="is_flashp_bank" call-argnr="1" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1569" col="6" my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:1567:12" my-argnr="1"/>
+<function-call call-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:1800:20" call-funcname="psoc4_alloc_bank" call-argnr="4" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1858" col="16" my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:1852:12" my-argnr="2"/>
+  </FileInfo>
+  <FileInfo check="Null pointer">
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:226:20" my-argnr="1" my-argname="bank" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="228" col="9" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:251:20" my-argnr="1" my-argname="bank" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="253" col="31" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:294:16" my-argnr="1" my-argname="bank" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="296" col="31" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:377:12" my-argnr="2" my-argname="p4_info" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="379" col="35" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" my-argnr="2" my-argname="p4_info" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="494" col="35" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:566:12" my-argnr="1" my-argname="target" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="568" col="6" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:668:12" my-argnr="1" my-argname="bank" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="670" col="31" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:703:12" my-argnr="1" my-argname="bank" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="705" col="28" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:803:13" my-argnr="1" my-argname="bank" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="805" col="52" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:846:12" my-argnr="1" my-argname="bank" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="848" col="31" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:904:12" my-argnr="1" my-argname="bank" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="906" col="31" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:918:12" my-argnr="2" my-argname="prot_array" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="920" col="3" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:1530:12" my-argnr="1" my-argname="bank" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1532" col="26" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:1634:1" my-argnr="2" my-argname="bank" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1637" col="2" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:1800:20" my-argnr="1" my-argname="main_bank" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1803" col="30" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:1852:12" my-argnr="1" my-argname="bank" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1854" col="26" value="0"/>
+  </FileInfo>
+  <FileInfo check="Uninitialized variables">
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:226:20" my-argnr="1" my-argname="bank" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="228" col="9" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:231:20" my-argnr="1" my-argname="bank" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="233" col="10" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:236:20" my-argnr="1" my-argname="bank" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="238" col="10" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:241:20" my-argnr="1" my-argname="bank" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="243" col="10" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:246:20" my-argnr="1" my-argname="bank" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="248" col="10" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:251:20" my-argnr="1" my-argname="bank" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="253" col="31" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:294:16" my-argnr="1" my-argname="bank" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="296" col="31" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:377:12" my-argnr="2" my-argname="p4_info" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="379" col="35" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:482:12" my-argnr="2" my-argname="p4_info" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="494" col="35" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:566:12" my-argnr="1" my-argname="target" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="568" col="6" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:668:12" my-argnr="1" my-argname="bank" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="670" col="31" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:703:12" my-argnr="1" my-argname="bank" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="705" col="28" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:846:12" my-argnr="1" my-argname="bank" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="848" col="31" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:904:12" my-argnr="1" my-argname="bank" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="906" col="31" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:1530:12" my-argnr="1" my-argname="bank" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1532" col="26" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:1800:20" my-argnr="1" my-argname="main_bank" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1803" col="30" value="0"/>
+    <unsafe-usage my-id="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c:1852:12" my-argnr="1" my-argname="bank" file="C:/Users/403283/Code/microsoft-openocd/openocd/src/flash/nor/psoc4.c" line="1854" col="26" value="0"/>
+  </FileInfo>
+  <FileInfo check="CheckUnusedFunctions">
+    <functiondecl functionName="is_mflash_bank" lineNumber="226"/>
+    <functiondecl functionName="is_wflash_bank" lineNumber="231"/>
+    <functiondecl functionName="is_sflash_bank" lineNumber="236"/>
+    <functiondecl functionName="is_flashp_bank" lineNumber="241"/>
+    <functiondecl functionName="is_chipp_bank" lineNumber="246"/>
+    <functiondecl functionName="is_psoc4hv" lineNumber="251"/>
+    <functiondecl functionName="psoc4_family_name" lineNumber="257"/>
+    <functiondecl functionName="psoc4_disable_remap" lineNumber="276"/>
+    <functiondecl functionName="psoc4_addr_to_macro" lineNumber="294"/>
+    <functiondecl functionName="psoc4_read_family" lineNumber="322"/>
+    <functiondecl functionName="psoc4_read_geometry" lineNumber="377"/>
+    <functiondecl functionName="psoc4_sysreq_errorstr" lineNumber="409"/>
+    <functiondecl functionName="psoc4_protection_str" lineNumber="457"/>
+    <functiondecl functionName="psoc4_sysreq" lineNumber="482"/>
+    <functiondecl functionName="psoc4_sysreq_prepare" lineNumber="566"/>
+    <functiondecl functionName="psoc4_sysreq_release" lineNumber="634"/>
+    <functiondecl functionName="psoc4_decode_sflash" lineNumber="668"/>
+    <functiondecl functionName="psoc4hv_decode_sflash" lineNumber="703"/>
+    <functiondecl functionName="psoc4_sysreq_silicon_id" lineNumber="741"/>
+    <functiondecl functionName="next_pow2" lineNumber="783"/>
+    <functiondecl functionName="psoc4_check_wouning" lineNumber="803"/>
+    <functiondecl functionName="psoc4_probe" lineNumber="846"/>
+    <functiondecl functionName="psoc4_auto_probe" lineNumber="904"/>
+    <functiondecl functionName="psoc4_read_row_protection" lineNumber="918"/>
+    <functiondecl functionName="psoc4_write_row_protection" lineNumber="959"/>
+    <functiondecl functionName="psoc4_protect" lineNumber="1004"/>
+    <functiondecl functionName="psoc4_blank_check" lineNumber="1042"/>
+    <functiondecl functionName="psoc4_protect_check" lineNumber="1075"/>
+    <functiondecl functionName="psoc4_write_inner" lineNumber="1105"/>
+    <functiondecl functionName="psoc4_write" lineNumber="1268"/>
+    <functiondecl functionName="psoc4_mass_erase" lineNumber="1322"/>
+    <functiondecl functionName="psoc4_erase" lineNumber="1362"/>
+    <functiondecl functionName="psoc4_silicon_info" lineNumber="1429"/>
+    <functiondecl functionName="psoc4_get_info" lineNumber="1530"/>
+    <functiondecl functionName="psoc4_flash_read" lineNumber="1567"/>
+    <functiondecl functionName="COMMAND_HELPER" lineNumber="1634"/>
+    <functiondecl functionName="COMMAND_HANDLER" lineNumber="1646"/>
+    <functiondecl functionName="COMMAND_HANDLER" lineNumber="1671"/>
+    <functiondecl functionName="COMMAND_HANDLER" lineNumber="1712"/>
+    <functiondecl functionName="COMMAND_HANDLER" lineNumber="1791"/>
+    <functiondecl functionName="psoc4_alloc_bank" lineNumber="1800"/>
+    <functiondecl functionName="maybe_add_sflash_bank" lineNumber="1852"/>
+    <functiondecl functionName="COMMAND_HANDLER" lineNumber="1889"/>
+    <functiondecl functionName="COMMAND_HANDLER" lineNumber="1942"/>
+    <functiondecl functionName="COMMAND_HANDLER" lineNumber="1974"/>
+    <functioncall functionName="AIRCR_SYSRESETREQ"/>
+    <functioncall functionName="ARMV7M_COMMON_MAGIC"/>
+    <functioncall functionName="ARM_MODE_THREAD"/>
+    <functioncall functionName="BIT"/>
+    <functioncall functionName="BKPT_HARD"/>
+    <functioncall functionName="CALL_COMMAND_HANDLER"/>
+    <functioncall functionName="CMD"/>
+    <functioncall functionName="CMD_ARGC"/>
+    <functioncall functionName="CMD_CTX"/>
+    <functioncall functionName="COMMAND_ANY"/>
+    <functioncall functionName="COMMAND_EXEC"/>
+    <functioncall functionName="COMMAND_HANDLER"/>
+    <functioncall functionName="COMMAND_HELPER"/>
+    <functioncall functionName="COMMAND_PARSE_ON_OFF"/>
+    <functioncall functionName="COMMAND_REGISTRATION_DONE"/>
+    <functioncall functionName="ERASING"/>
+    <functioncall functionName="ERROR_COMMAND_SYNTAX_ERROR"/>
+    <functioncall functionName="ERROR_FAIL"/>
+    <functioncall functionName="ERROR_FLASH_OPERATION_FAILED"/>
+    <functioncall functionName="ERROR_FLASH_OPER_UNSUPPORTED"/>
+    <functioncall functionName="ERROR_OK"/>
+    <functioncall functionName="ERROR_TARGET_NOT_HALTED"/>
+    <functioncall functionName="Jim_Eval"/>
+    <functioncall functionName="Jim_GetLong"/>
+    <functioncall functionName="Jim_GetResult"/>
+    <functioncall functionName="Jim_GetString"/>
+    <functioncall functionName="Jim_IsList"/>
+    <functioncall functionName="Jim_ListGetIndex"/>
+    <functioncall functionName="Jim_ListLength"/>
+    <functioncall functionName="LOG_DEBUG"/>
+    <functioncall functionName="LOG_ERROR"/>
+    <functioncall functionName="LOG_INFO"/>
+    <functioncall functionName="LOG_LVL_USER"/>
+    <functioncall functionName="LOG_WARNING"/>
+    <functioncall functionName="NULL"/>
+    <functioncall functionName="NVIC_AIRCR"/>
+    <functioncall functionName="PARAM_OUT"/>
+    <functioncall functionName="PROGRAMMING"/>
+    <functioncall functionName="PSOC4_48MHZ_NRQ"/>
+    <functioncall functionName="PSOC4_LEGACY"/>
+    <functioncall functionName="PSOC4_NO_SFLASH"/>
+    <functioncall functionName="PSOC4_SFLASH_V2"/>
+    <functioncall functionName="TARGET_HALTED"/>
+    <functioncall functionName="TARGET_RESET"/>
+    <functioncall functionName="alive_sleep"/>
+    <functioncall functionName="alloc_block_array"/>
+    <functioncall functionName="alloc_printf"/>
+    <functioncall functionName="alloca"/>
+    <functioncall functionName="assert"/>
+    <functioncall functionName="breakpoint_add"/>
+    <functioncall functionName="breakpoint_remove"/>
+    <functioncall functionName="buf_set_buf"/>
+    <functioncall functionName="buf_set_u32"/>
+    <functioncall functionName="calloc"/>
+    <functioncall functionName="change_debug_level"/>
+    <functioncall functionName="cleanup_ram_wa"/>
+    <functioncall functionName="cmd"/>
+    <functioncall functionName="command_print"/>
+    <functioncall functionName="command_print_sameline"/>
+    <functioncall functionName="cortex_m_examine"/>
+    <functioncall functionName="dap_dp_init"/>
+    <functioncall functionName="dap_invalidate_cache"/>
+    <functioncall functionName="default_flash_blank_check"/>
+    <functioncall functionName="default_flash_free_driver_priv"/>
+    <functioncall functionName="default_flash_read"/>
+    <functioncall functionName="destroy_reg_param"/>
+    <functioncall functionName="destroy_rp_free_wa"/>
+    <functioncall functionName="exit"/>
+    <functioncall functionName="exit0"/>
+    <functioncall functionName="exit1"/>
+    <functioncall functionName="exit2"/>
+    <functioncall functionName="exit3"/>
+    <functioncall functionName="exit4"/>
+    <functioncall functionName="exit_free_wa"/>
+    <functioncall functionName="false"/>
+    <functioncall functionName="flash_bank_add"/>
+    <functioncall functionName="flash_command_get_bank"/>
+    <functioncall functionName="free"/>
+    <functioncall functionName="free_sflash"/>
+    <functioncall functionName="get_current_target"/>
+    <functioncall functionName="get_flash_bank_by_addr"/>
+    <functioncall functionName="get_flash_bank_by_name_noprobe"/>
+    <functioncall functionName="init_reg_param"/>
+    <functioncall functionName="is_chipp_bank"/>
+    <functioncall functionName="is_flashp_bank"/>
+    <functioncall functionName="is_mflash_bank"/>
+    <functioncall functionName="is_psoc4hv"/>
+    <functioncall functionName="is_sflash_bank"/>
+    <functioncall functionName="is_wflash_bank"/>
+    <functioncall functionName="malloc"/>
+    <functioncall functionName="maybe_add_sflash_bank"/>
+    <functioncall functionName="mem_ap_read_atomic_u32"/>
+    <functioncall functionName="mem_ap_write_atomic_u32"/>
+    <functioncall functionName="memcpy"/>
+    <functioncall functionName="memset"/>
+    <functioncall functionName="next_pow2"/>
+    <functioncall functionName="progress_done"/>
+    <functioncall functionName="progress_init"/>
+    <functioncall functionName="progress_left"/>
+    <functioncall functionName="psoc4_addr_to_macro"/>
+    <functioncall functionName="psoc4_alloc_bank"/>
+    <functioncall functionName="psoc4_auto_probe"/>
+    <functioncall functionName="psoc4_blank_check"/>
+    <functioncall functionName="psoc4_check_wouning"/>
+    <functioncall functionName="psoc4_decode_sflash"/>
+    <functioncall functionName="psoc4_disable_remap"/>
+    <functioncall functionName="psoc4_erase"/>
+    <functioncall functionName="psoc4_family_name"/>
+    <functioncall functionName="psoc4_flash_bank_command"/>
+    <functioncall functionName="psoc4_flash_read"/>
+    <functioncall functionName="psoc4_get_info"/>
+    <functioncall functionName="psoc4_handle_add_flash_banks"/>
+    <functioncall functionName="psoc4_handle_chip_protect"/>
+    <functioncall functionName="psoc4_handle_disable_cpu_read_relocations_command"/>
+    <functioncall functionName="psoc4_handle_ecc_error_reporting"/>
+    <functioncall functionName="psoc4_handle_mass_erase"/>
+    <functioncall functionName="psoc4_handle_reset_halt"/>
+    <functioncall functionName="psoc4_handle_silicon_info"/>
+    <functioncall functionName="psoc4_mass_erase"/>
+    <functioncall functionName="psoc4_probe"/>
+    <functioncall functionName="psoc4_protect"/>
+    <functioncall functionName="psoc4_protect_check"/>
+    <functioncall functionName="psoc4_protection_str"/>
+    <functioncall functionName="psoc4_read_family"/>
+    <functioncall functionName="psoc4_read_geometry"/>
+    <functioncall functionName="psoc4_read_row_protection"/>
+    <functioncall functionName="psoc4_silicon_info"/>
+    <functioncall functionName="psoc4_sysreq"/>
+    <functioncall functionName="psoc4_sysreq_errorstr"/>
+    <functioncall functionName="psoc4_sysreq_prepare"/>
+    <functioncall functionName="psoc4_sysreq_release"/>
+    <functioncall functionName="psoc4_sysreq_silicon_id"/>
+    <functioncall functionName="psoc4_write"/>
+    <functioncall functionName="psoc4_write_inner"/>
+    <functioncall functionName="psoc4_write_row_protection"/>
+    <functioncall functionName="psoc4hv_decode_sflash"/>
+    <functioncall functionName="register_cache_invalidate"/>
+    <functioncall functionName="release"/>
+    <functioncall functionName="snprintf"/>
+    <functioncall functionName="strcat"/>
+    <functioncall functionName="strcmp"/>
+    <functioncall functionName="strdup"/>
+    <functioncall functionName="strlen"/>
+    <functioncall functionName="strrchr"/>
+    <functioncall functionName="target_alloc_working_area"/>
+    <functioncall functionName="target_buffer_get_u32"/>
+    <functioncall functionName="target_free_working_area"/>
+    <functioncall functionName="target_get_working_area_avail"/>
+    <functioncall functionName="target_halt"/>
+    <functioncall functionName="target_poll"/>
+    <functioncall functionName="target_read_buffer"/>
+    <functioncall functionName="target_read_memory"/>
+    <functioncall functionName="target_read_u16"/>
+    <functioncall functionName="target_read_u32"/>
+    <functioncall functionName="target_read_u8"/>
+    <functioncall functionName="target_start_algorithm"/>
+    <functioncall functionName="target_state_name"/>
+    <functioncall functionName="target_to_armv7m"/>
+    <functioncall functionName="target_wait_algorithm"/>
+    <functioncall functionName="target_wait_state"/>
+    <functioncall functionName="target_write_buffer"/>
+    <functioncall functionName="target_write_u32"/>
+    <functioncall functionName="timeval_ms"/>
+    <functioncall functionName="true"/>
+    <functioncall functionName="value"/>
+  </FileInfo>
+</analyzerinfo>
