@@ -176,6 +176,7 @@ static const struct psoc4_family psoc4_families[] = {
 	{ 0xAD, {0x1D20, 0x1DFF}, "PMG1-S2",                    &spcif_v2, PSOC4_NO_SFLASH, },
 	{ 0xAF, {0, 0},           "CCG4",                       &spcif_v1, PSOC4_NO_SFLASH, },
 	{ 0xB0, {0x2000, 0x20FF}, "CCG3PA",                     &spcif_v2, PSOC4_NO_SFLASH, },
+	{ 0xB1, {0x2000, 0x2100}, "CCG5",                       &spcif_v2, PSOC4_NO_SFLASH, },
 	{ 0xB0, {0x2020, 0x204F}, "PMG1-S0",                    &spcif_v2, PSOC4_NO_SFLASH, },
 	{ 0xBA, {0x2A00, 0x2A1F}, "CCG6",                       &spcif_v2, PSOC4_NO_SFLASH, },
 	{ 0xBA, {0x2A20, 0x2AFF}, "PMG1-S1",                    &spcif_v2, PSOC4_NO_SFLASH, },
