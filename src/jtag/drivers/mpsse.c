@@ -1,19 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+
 /**************************************************************************
  *   Copyright (C) 2012 by Andreas Fritiofson                              *
  *   andreas.fritiofson@gmail.com                                          *
- *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
- *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 2 of the License, or     *
- *   (at your option) any later version.                                   *
- *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
- *   GNU General Public License for more details.                          *
- *                                                                         *
- *   You should have received a copy of the GNU General Public License     *
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -22,6 +11,8 @@
 
 #include "mpsse.h"
 #include "helper/log.h"
+#include "helper/replacements.h"
+#include "helper/time_support.h"
 #include <libusb.h>
 
 /* Compatibility define for older libusb-1.0 */
@@ -29,26 +20,22 @@
 #define LIBUSB_CALL
 #endif
 
-#ifdef _DEBUG_JTAG_IO_
-#define DEBUG_IO(expr...) LOG_DEBUG(expr)
 #define DEBUG_PRINT_BUF(buf, len) \
 	do { \
-		char buf_string[32 * 3 + 1]; \
-		int buf_string_pos = 0; \
-		for (int i = 0; i < len; i++) { \
-			buf_string_pos += sprintf(buf_string + buf_string_pos, " %02x", buf[i]); \
-			if (i % 32 == 32 - 1) { \
-				LOG_DEBUG("%s", buf_string); \
-				buf_string_pos = 0; \
+		if (LOG_LEVEL_IS(LOG_LVL_DEBUG_IO)) { \
+			char buf_string[32 * 3 + 1]; \
+			int buf_string_pos = 0; \
+			for (int i = 0; i < len; i++) { \
+				buf_string_pos += sprintf(buf_string + buf_string_pos, " %02x", buf[i]); \
+				if (i % 32 == 32 - 1) { \
+					LOG_DEBUG_IO("%s", buf_string); \
+					buf_string_pos = 0; \
+				} \
 			} \
+			if (buf_string_pos > 0) \
+				LOG_DEBUG_IO("%s", buf_string);\
 		} \
-		if (buf_string_pos > 0) \
-			LOG_DEBUG("%s", buf_string);\
 	} while (0)
-#else
-#define DEBUG_IO(expr...) do {} while (0)
-#define DEBUG_PRINT_BUF(buf, len) do {} while (0)
-#endif
 
 #define FTDI_DEVICE_OUT_REQTYPE (LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE)
 #define FTDI_DEVICE_IN_REQTYPE (0x80 | LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE)
@@ -65,8 +52,8 @@
 #define SIO_RESET_PURGE_TX 2
 
 struct mpsse_ctx {
-	libusb_context *usb_ctx;
-	libusb_device_handle *usb_dev;
+	struct libusb_context *usb_ctx;
+	struct libusb_device_handle *usb_dev;
 	unsigned int usb_write_timeout;
 	unsigned int usb_read_timeout;
 	uint8_t in_ep;
@@ -88,7 +75,7 @@ struct mpsse_ctx {
 };
 
 /* Returns true if the string descriptor indexed by str_index in device matches string */
-static bool string_descriptor_equal(libusb_device_handle *device, uint8_t str_index,
+static bool string_descriptor_equal(struct libusb_device_handle *device, uint8_t str_index,
 	const char *string)
 {
 	int retval;
@@ -102,7 +89,7 @@ static bool string_descriptor_equal(libusb_device_handle *device, uint8_t str_in
 	return strncmp(string, desc_string, sizeof(desc_string)) == 0;
 }
 
-static bool device_location_equal(libusb_device *device, const char *location)
+static bool device_location_equal(struct libusb_device *device, const char *location)
 {
 	bool result = false;
 #ifdef HAVE_LIBUSB_GET_PORT_NUMBERS
@@ -121,7 +108,7 @@ static bool device_location_equal(libusb_device *device, const char *location)
 	LOG_DEBUG("device path has %i steps", path_len);
 
 	ptr = strtok(loc, "-:");
-	if (ptr == NULL) {
+	if (!ptr) {
 		LOG_DEBUG("no ':' in path");
 		goto done;
 	}
@@ -133,7 +120,7 @@ static bool device_location_equal(libusb_device *device, const char *location)
 	path_step = 0;
 	while (path_step < 7) {
 		ptr = strtok(NULL, ".,");
-		if (ptr == NULL) {
+		if (!ptr) {
 			LOG_DEBUG("no more tokens in path at step %i", path_step);
 			break;
 		}
@@ -164,7 +151,7 @@ static bool device_location_equal(libusb_device *device, const char *location)
 static bool open_matching_device(struct mpsse_ctx *ctx, const uint16_t *vid, const uint16_t *pid,
 	const char *product, const char *serial, const char *location)
 {
-	libusb_device **list;
+	struct libusb_device **list;
 	struct libusb_device_descriptor desc;
 	struct libusb_config_descriptor *config0;
 	int err;
@@ -174,7 +161,7 @@ static bool open_matching_device(struct mpsse_ctx *ctx, const uint16_t *vid, con
 		LOG_ERROR("libusb_get_device_list() failed with %s", libusb_error_name(cnt));
 
 	for (ssize_t i = 0; i < cnt; i++) {
-		libusb_device *device = list[i];
+		struct libusb_device *device = list[i];
 
 		err = libusb_get_device_descriptor(device, &desc);
 		if (err != LIBUSB_SUCCESS) {
@@ -407,13 +394,10 @@ void mpsse_close(struct mpsse_ctx *ctx)
 	if (ctx->usb_ctx)
 		libusb_exit(ctx->usb_ctx);
 	bit_copy_discard(&ctx->read_queue);
-	if (ctx->write_buffer)
-		free(ctx->write_buffer);
-	if (ctx->read_buffer)
-		free(ctx->read_buffer);
-	if (ctx->read_chunk)
-		free(ctx->read_chunk);
 
+	free(ctx->write_buffer);
+	free(ctx->read_buffer);
+	free(ctx->read_chunk);
 	free(ctx);
 }
 
@@ -458,7 +442,7 @@ static unsigned buffer_read_space(struct mpsse_ctx *ctx)
 
 static void buffer_write_byte(struct mpsse_ctx *ctx, uint8_t data)
 {
-	DEBUG_IO("%02x", data);
+	LOG_DEBUG_IO("%02x", data);
 	assert(ctx->write_count < ctx->write_size);
 	ctx->write_buffer[ctx->write_count++] = data;
 }
@@ -466,7 +450,7 @@ static void buffer_write_byte(struct mpsse_ctx *ctx, uint8_t data)
 static unsigned buffer_write(struct mpsse_ctx *ctx, const uint8_t *out, unsigned out_offset,
 	unsigned bit_count)
 {
-	DEBUG_IO("%d bits", bit_count);
+	LOG_DEBUG_IO("%d bits", bit_count);
 	assert(ctx->write_count + DIV_ROUND_UP(bit_count, 8) <= ctx->write_size);
 	bit_copy(ctx->write_buffer + ctx->write_count, 0, out, out_offset, bit_count);
 	ctx->write_count += DIV_ROUND_UP(bit_count, 8);
@@ -476,7 +460,7 @@ static unsigned buffer_write(struct mpsse_ctx *ctx, const uint8_t *out, unsigned
 static unsigned buffer_add_read(struct mpsse_ctx *ctx, uint8_t *in, unsigned in_offset,
 	unsigned bit_count, unsigned offset)
 {
-	DEBUG_IO("%d bits, offset %d", bit_count, offset);
+	LOG_DEBUG_IO("%d bits, offset %d", bit_count, offset);
 	assert(ctx->read_count + DIV_ROUND_UP(bit_count, 8) <= ctx->read_size);
 	bit_copy_queued(&ctx->read_queue, in, in_offset, ctx->read_buffer + ctx->read_count, offset,
 		bit_count);
@@ -500,10 +484,10 @@ void mpsse_clock_data(struct mpsse_ctx *ctx, const uint8_t *out, unsigned out_of
 	unsigned in_offset, unsigned length, uint8_t mode)
 {
 	/* TODO: Fix MSB first modes */
-	DEBUG_IO("%s%s %d bits", in ? "in" : "", out ? "out" : "", length);
+	LOG_DEBUG_IO("%s%s %d bits", in ? "in" : "", out ? "out" : "", length);
 
 	if (ctx->retval != ERROR_OK) {
-		DEBUG_IO("Ignoring command due to previous error");
+		LOG_DEBUG_IO("Ignoring command due to previous error");
 		return;
 	}
 
@@ -576,11 +560,11 @@ void mpsse_clock_tms_cs_out(struct mpsse_ctx *ctx, const uint8_t *out, unsigned 
 void mpsse_clock_tms_cs(struct mpsse_ctx *ctx, const uint8_t *out, unsigned out_offset, uint8_t *in,
 	unsigned in_offset, unsigned length, bool tdi, uint8_t mode)
 {
-	DEBUG_IO("%sout %d bits, tdi=%d", in ? "in" : "", length, tdi);
+	LOG_DEBUG_IO("%sout %d bits, tdi=%d", in ? "in" : "", length, tdi);
 	assert(out);
 
 	if (ctx->retval != ERROR_OK) {
-		DEBUG_IO("Ignoring command due to previous error");
+		LOG_DEBUG_IO("Ignoring command due to previous error");
 		return;
 	}
 
@@ -626,10 +610,10 @@ void mpsse_clock_tms_cs(struct mpsse_ctx *ctx, const uint8_t *out, unsigned out_
 
 void mpsse_set_data_bits_low_byte(struct mpsse_ctx *ctx, uint8_t data, uint8_t dir)
 {
-	DEBUG_IO("-");
+	LOG_DEBUG_IO("-");
 
 	if (ctx->retval != ERROR_OK) {
-		DEBUG_IO("Ignoring command due to previous error");
+		LOG_DEBUG_IO("Ignoring command due to previous error");
 		return;
 	}
 
@@ -643,10 +627,10 @@ void mpsse_set_data_bits_low_byte(struct mpsse_ctx *ctx, uint8_t data, uint8_t d
 
 void mpsse_set_data_bits_high_byte(struct mpsse_ctx *ctx, uint8_t data, uint8_t dir)
 {
-	DEBUG_IO("-");
+	LOG_DEBUG_IO("-");
 
 	if (ctx->retval != ERROR_OK) {
-		DEBUG_IO("Ignoring command due to previous error");
+		LOG_DEBUG_IO("Ignoring command due to previous error");
 		return;
 	}
 
@@ -660,10 +644,10 @@ void mpsse_set_data_bits_high_byte(struct mpsse_ctx *ctx, uint8_t data, uint8_t 
 
 void mpsse_read_data_bits_low_byte(struct mpsse_ctx *ctx, uint8_t *data)
 {
-	DEBUG_IO("-");
+	LOG_DEBUG_IO("-");
 
 	if (ctx->retval != ERROR_OK) {
-		DEBUG_IO("Ignoring command due to previous error");
+		LOG_DEBUG_IO("Ignoring command due to previous error");
 		return;
 	}
 
@@ -676,10 +660,10 @@ void mpsse_read_data_bits_low_byte(struct mpsse_ctx *ctx, uint8_t *data)
 
 void mpsse_read_data_bits_high_byte(struct mpsse_ctx *ctx, uint8_t *data)
 {
-	DEBUG_IO("-");
+	LOG_DEBUG_IO("-");
 
 	if (ctx->retval != ERROR_OK) {
-		DEBUG_IO("Ignoring command due to previous error");
+		LOG_DEBUG_IO("Ignoring command due to previous error");
 		return;
 	}
 
@@ -694,7 +678,7 @@ static void single_byte_boolean_helper(struct mpsse_ctx *ctx, bool var, uint8_t 
 	uint8_t val_if_false)
 {
 	if (ctx->retval != ERROR_OK) {
-		DEBUG_IO("Ignoring command due to previous error");
+		LOG_DEBUG_IO("Ignoring command due to previous error");
 		return;
 	}
 
@@ -715,7 +699,7 @@ void mpsse_set_divisor(struct mpsse_ctx *ctx, uint16_t divisor)
 	LOG_DEBUG("%d", divisor);
 
 	if (ctx->retval != ERROR_OK) {
-		DEBUG_IO("Ignoring command due to previous error");
+		LOG_DEBUG_IO("Ignoring command due to previous error");
 		return;
 	}
 
@@ -817,7 +801,7 @@ static LIBUSB_CALL void read_cb(struct libusb_transfer *transfer)
 		}
 	}
 
-	DEBUG_IO("raw chunk %d, transferred %d of %d", transfer->actual_length, res->transferred,
+	LOG_DEBUG_IO("raw chunk %d, transferred %d of %d", transfer->actual_length, res->transferred,
 		ctx->read_count);
 
 	if (!res->done)
@@ -832,7 +816,7 @@ static LIBUSB_CALL void write_cb(struct libusb_transfer *transfer)
 
 	res->transferred += transfer->actual_length;
 
-	DEBUG_IO("transferred %d of %d", res->transferred, ctx->write_count);
+	LOG_DEBUG_IO("transferred %d of %d", res->transferred, ctx->write_count);
 
 	DEBUG_PRINT_BUF(transfer->buffer, transfer->actual_length);
 
@@ -851,13 +835,13 @@ int mpsse_flush(struct mpsse_ctx *ctx)
 	int retval = ctx->retval;
 
 	if (retval != ERROR_OK) {
-		DEBUG_IO("Ignoring flush due to previous error");
+		LOG_DEBUG_IO("Ignoring flush due to previous error");
 		assert(ctx->write_count == 0 && ctx->read_count == 0);
 		ctx->retval = ERROR_OK;
 		return retval;
 	}
 
-	DEBUG_IO("write %d%s, read %d", ctx->write_count, ctx->read_count ? "+1" : "",
+	LOG_DEBUG_IO("write %d%s, read %d", ctx->write_count, ctx->read_count ? "+1" : "",
 			ctx->read_count);
 	assert(ctx->write_count > 0 || ctx->read_count == 0); /* No read data without write data */
 
@@ -892,6 +876,8 @@ int mpsse_flush(struct mpsse_ctx *ctx)
 	}
 
 	/* Polling loop, more or less taken from libftdi */
+	int64_t start = timeval_ms();
+	int64_t warn_after = 2000;
 	while (!write_result.done || !read_result.done) {
 		struct timeval timeout_usb;
 
@@ -913,6 +899,13 @@ int mpsse_flush(struct mpsse_ctx *ctx)
 				if (retval != LIBUSB_SUCCESS)
 					break;
 			}
+		}
+
+		int64_t now = timeval_ms();
+		if (now - start > warn_after) {
+			LOG_WARNING("Haven't made progress in mpsse_flush() for %" PRId64
+					"ms.", now - start);
+			warn_after *= 2;
 		}
 	}
 
@@ -941,12 +934,12 @@ error_check:
 		retval = ERROR_OK;
 	}
 
+	if (retval != ERROR_OK)
+		mpsse_purge(ctx);
+
 	libusb_free_transfer(write_transfer);
 	if (read_transfer)
 		libusb_free_transfer(read_transfer);
-
-	if (retval != ERROR_OK)
-		mpsse_purge(ctx);
 
 	return retval;
 }

@@ -19,7 +19,7 @@
 #include "register.h"
 #include "mips64_pracc.h"
 
-#define MIPS64_COMMON_MAGIC		0xB640B640U
+#define MIPS64_COMMON_MAGIC		0xB640B640
 
 /* MIPS64 CP0 registers */
 #define MIPS64_C0_INDEX		0
@@ -81,8 +81,7 @@ struct mips64_comparator {
 };
 
 struct mips64_common {
-	unsigned int common_magic;
-
+	uint32_t common_magic;
 	void *arch_info;
 	struct reg_cache *core_cache;
 	struct mips_ejtag ejtag_info;

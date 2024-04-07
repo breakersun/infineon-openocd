@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /***************************************************************************
  *   Copyright (C) 2013-2015,2019-2020 Synopsys, Inc.                      *
@@ -93,7 +93,7 @@ struct reg *arc_reg_get_by_name(struct reg_cache *first,
  *
  * @param target Target for which to reset caches states.
  */
-static int arc_reset_caches_states(struct target *target)
+int arc_reset_caches_states(struct target *target)
 {
 	struct arc_common *arc = target_to_arc(target);
 
@@ -283,7 +283,7 @@ static int arc_set_register(struct reg *reg, uint8_t *buf)
 	return ERROR_OK;
 }
 
-static const struct reg_arch_type arc_reg_type = {
+const struct reg_arch_type arc_reg_type = {
 	.get = arc_get_register,
 	.set = arc_set_register,
 };
@@ -1401,7 +1401,7 @@ static int arc_target_create(struct target *target, Jim_Interp *interp)
  * little endian, so different type of conversion should be done.
  * Middle endian: instruction "aabbccdd", stored as "bbaaddcc"
  */
-static int arc_write_instruction_u32(struct target *target, uint32_t address,
+int arc_write_instruction_u32(struct target *target, uint32_t address,
 	uint32_t instr)
 {
 	uint8_t value_buf[4];
@@ -1428,7 +1428,7 @@ static int arc_write_instruction_u32(struct target *target, uint32_t address,
  * case of little endian ARC instructions are in middle endian format, so
  * different type of conversion should be done.
  */
-static int arc_read_instruction_u32(struct target *target, uint32_t address,
+int arc_read_instruction_u32(struct target *target, uint32_t address,
 		uint32_t *value)
 {
 	uint8_t value_buf[4];
@@ -1694,7 +1694,7 @@ static int arc_remove_breakpoint(struct target *target,
 	return ERROR_OK;
 }
 
-static void arc_reset_actionpoints(struct target *target)
+void arc_reset_actionpoints(struct target *target)
 {
 	struct arc_common *arc = target_to_arc(target);
 	struct arc_actionpoint *ap_list = arc->actionpoints_list;
@@ -1965,7 +1965,7 @@ static int arc_hit_watchpoint(struct target *target, struct watchpoint **hit_wat
 
 /* Helper function which switches core to single_step mode by
  * doing aux r/w operations.  */
-static int arc_config_step(struct target *target, int enable_step)
+int arc_config_step(struct target *target, int enable_step)
 {
 	uint32_t value;
 
@@ -2001,7 +2001,7 @@ static int arc_config_step(struct target *target, int enable_step)
 	return ERROR_OK;
 }
 
-static int arc_step(struct target *target, int current, target_addr_t address,
+int arc_step(struct target *target, int current, target_addr_t address,
 	int handle_breakpoints)
 {
 	/* get pointers to arch-specific information */
@@ -2165,7 +2165,7 @@ int arc_cache_invalidate(struct target *target)
  * values directly from memory, bypassing cache, so if there are unflushed
  * lines debugger will read invalid values, which will cause a lot of troubles.
  * */
-static int arc_dcache_flush(struct target *target)
+int arc_dcache_flush(struct target *target)
 {
 	uint32_t value, dc_ctrl_value;
 	bool has_to_set_dc_ctrl_im;

@@ -1,18 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+
 /***************************************************************************
  *   Copyright (C) 2018 by Texas Instruments, Inc.                         *
- *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
- *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 2 of the License, or     *
- *   (at your option) any later version.                                   *
- *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
- *   GNU General Public License for more details.                          *
- *                                                                         *
- *   You should have received a copy of the GNU General Public License     *
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifndef OPENOCD_FLASH_NOR_MSP432_H
@@ -34,14 +23,17 @@
 #define MSP432E411Y       7 /* MSP432E401Y device */
 #define MSP432E4X_GUESS   8 /* Assuming it's an MSP432E4x device */
 
+/* Common MSP432 flash parameters */
+#define FLASH_BASE 0x00000000
+
 /* MSP432P4 flash parameters */
-#define P4_FLASH_MAIN_BASE 0x00000000
+#define P4_FLASH_MAIN_BASE FLASH_BASE
 #define P4_FLASH_INFO_BASE 0x00200000
 #define P4_SECTOR_LENGTH   0x1000
 #define P4_ALGO_ENTRY_ADDR 0x01000110
 
-/* MSP432E4 flash paramters */
-#define E4_FLASH_BASE      0x00000000
+/* MSP432E4 flash parameters */
+#define E4_FLASH_BASE      FLASH_BASE
 #define E4_FLASH_SIZE      0x100000
 #define E4_SECTOR_LENGTH   0x4000
 #define E4_ALGO_ENTRY_ADDR 0x20000110

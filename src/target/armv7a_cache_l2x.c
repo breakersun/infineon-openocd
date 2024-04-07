@@ -1,19 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+
 /***************************************************************************
  *   Copyright (C) 2015 by Oleksij Rempel                                  *
  *   linux@rempel-privat.de                                                *
- *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
- *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 2 of the License, or     *
- *   (at your option) any later version.                                   *
- *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
- *   GNU General Public License for more details.                          *
- *                                                                         *
- *   You should have received a copy of the GNU General Public License     *
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -27,6 +16,7 @@
 #include <helper/time_support.h>
 #include "target.h"
 #include "target_type.h"
+#include "smp.h"
 
 static int arm7a_l2x_sanity_check(struct target *target)
 {
@@ -173,19 +163,19 @@ done:
 	return retval;
 }
 
-static int arm7a_handle_l2x_cache_info_command(struct command_context *cmd_ctx,
+static int arm7a_handle_l2x_cache_info_command(struct command_invocation *cmd,
 	struct armv7a_cache_common *armv7a_cache)
 {
 	struct armv7a_l2x_cache *l2x_cache = (struct armv7a_l2x_cache *)
 		(armv7a_cache->outer_cache);
 
 	if (armv7a_cache->info == -1) {
-		command_print(cmd_ctx, "cache not yet identified");
+		command_print(cmd, "cache not yet identified");
 		return ERROR_OK;
 	}
 
-	command_print(cmd_ctx,
-		      "L2 unified cache Base Address 0x%" PRIx32 ", %" PRId32 " ways",
+	command_print(cmd,
+		      "L2 unified cache Base Address 0x%" PRIx32 ", %" PRIu32 " ways",
 		      l2x_cache->base, l2x_cache->way);
 
 	return ERROR_OK;
@@ -194,8 +184,7 @@ static int arm7a_handle_l2x_cache_info_command(struct command_context *cmd_ctx,
 static int armv7a_l2x_cache_init(struct target *target, uint32_t base, uint32_t way)
 {
 	struct armv7a_l2x_cache *l2x_cache;
-	struct target_list *head = target->head;
-	struct target *curr;
+	struct target_list *head;
 
 	struct armv7a_common *armv7a = target_to_armv7a(target);
 	if (armv7a->armv7a_mmu.armv7a_cache.outer_cache) {
@@ -210,8 +199,8 @@ static int armv7a_l2x_cache_init(struct target *target, uint32_t base, uint32_t 
 
 	/*  initialize all targets in this cluster (smp target)
 	 *  l2 cache must be configured after smp declaration */
-	while (head != (struct target_list *)NULL) {
-		curr = head->target;
+	foreach_smp_target(head, target->smp_targets) {
+		struct target *curr = head->target;
 		if (curr != target) {
 			armv7a = target_to_armv7a(curr);
 			if (armv7a->armv7a_mmu.armv7a_cache.outer_cache) {
@@ -220,7 +209,6 @@ static int armv7a_l2x_cache_init(struct target *target, uint32_t base, uint32_t 
 			}
 			armv7a->armv7a_mmu.armv7a_cache.outer_cache = l2x_cache;
 		}
-		head = head->next;
 	}
 	return ERROR_OK;
 }
@@ -235,7 +223,7 @@ COMMAND_HANDLER(arm7a_l2x_cache_info_command)
 	if (retval)
 		return retval;
 
-	return arm7a_handle_l2x_cache_info_command(CMD_CTX,
+	return arm7a_handle_l2x_cache_info_command(CMD,
 			&armv7a->armv7a_mmu.armv7a_cache);
 }
 
@@ -312,7 +300,7 @@ COMMAND_HANDLER(armv7a_l2x_cache_conf_cmd)
 	if (CMD_ARGC != 2)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
-	/* command_print(CMD_CTX, "%s %s", CMD_ARGV[0], CMD_ARGV[1]); */
+	/* command_print(CMD, "%s %s", CMD_ARGV[0], CMD_ARGV[1]); */
 	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[0], base);
 	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[1], way);
 
@@ -325,14 +313,14 @@ static const struct command_registration arm7a_l2x_cache_commands[] = {
 		.name = "conf",
 		.handler = armv7a_l2x_cache_conf_cmd,
 		.mode = COMMAND_ANY,
-		.help = "configure l2x cache ",
+		.help = "configure l2x cache",
 		.usage = "<base_addr> <number_of_way>",
 	},
 	{
 		.name = "info",
 		.handler = arm7a_l2x_cache_info_command,
 		.mode = COMMAND_ANY,
-		.help = "print cache realted information",
+		.help = "print cache related information",
 		.usage = "",
 	},
 	{

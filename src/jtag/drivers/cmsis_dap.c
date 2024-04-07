@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /***************************************************************************
  *   Copyright (C) 2021 by Adrian Negreanu                                 *
@@ -46,6 +46,10 @@ static const struct cmsis_dap_backend *const cmsis_dap_backends[] = {
 
 #if BUILD_CMSIS_DAP_HID == 1
 	&cmsis_dap_hid_backend,
+#endif
+
+#if BUILD_CMSIS_DAP_USB == 1
+	&cmsis_dap_usb_backend_async,
 #endif
 };
 
@@ -233,7 +237,10 @@ struct pending_scan_result {
 
 /* Up to MIN(packet_count, MAX_PENDING_REQUESTS) requests may be issued
  * until the first response arrives */
-#define MAX_PENDING_REQUESTS 3
+
+/* BHDT: HIDAPI on MacOS starts to drop outstanding IN packets when there are more
+ * than 30 of them. Lets stay on the safe side and limit number of pending requests */
+#define MAX_PENDING_REQUESTS 28
 
 /* Pending requests are organized as a FIFO - circular buffer */
 /* Each block in FIFO can contain up to pending_queue_len transfers */
@@ -258,7 +265,7 @@ static int queued_retval;
 
 static uint8_t output_pins = SWJ_PIN_SRST | SWJ_PIN_TRST;
 
-static struct cmsis_dap *cmsis_dap_handle;
+struct cmsis_dap *cmsis_dap_handle;
 
 
 static int cmsis_dap_quit(void);
@@ -573,8 +580,6 @@ static int cmsis_dap_metacmd_targetsel(uint32_t instance_id)
 	The purpose of this operation is to select the target
 	corresponding to the instance_id that is written */
 
-	LOG_DEBUG_IO("DP write reg TARGETSEL %" PRIx32, instance_id);
-
 	size_t idx = 0;
 	command[idx++] = CMD_DAP_SWD_SEQUENCE;
 	command[idx++] = 3;	/* sequence count */
@@ -660,7 +665,7 @@ static int cmsis_dap_cmd_dap_swo_baudrate(
 	command[0] = CMD_DAP_SWO_BAUDRATE;
 	h_u32_to_le(&command[1], in_baudrate);
 
-	int retval = cmsis_dap_xfer(cmsis_dap_handle, 5);
+	int retval = cmsis_dap_xfer(cmsis_dap_handle, 4);
 	uint32_t rvbr = le_to_h_u32(&cmsis_dap_handle->response[1]);
 	if (retval != ERROR_OK || rvbr == 0) {
 		LOG_ERROR("CMSIS-DAP: command CMD_SWO_Baudrate(%u) -> %u failed.", in_baudrate, rvbr);
@@ -785,7 +790,7 @@ static void cmsis_dap_swd_write_from_queue(struct cmsis_dap *dap)
 		uint8_t cmd = transfer->cmd;
 		uint32_t data = transfer->data;
 
-		LOG_DEBUG_IO("%s %s reg %x %" PRIx32,
+		LOG_DEBUG_IO("%s %s reg %x %"PRIx32,
 				cmd & SWD_CMD_APNDP ? "AP" : "DP",
 				cmd & SWD_CMD_RNW ? "read" : "write",
 			  (cmd & SWD_CMD_A32) >> 1, data);
@@ -891,7 +896,7 @@ static void cmsis_dap_swd_read_process(struct cmsis_dap *dap, int timeout_ms)
 			uint32_t tmp = data;
 			idx += 4;
 
-			LOG_DEBUG_IO("Read result: %" PRIx32, data);
+			LOG_DEBUG_IO("Read result: %"PRIx32, data);
 
 			/* Imitate posted AP reads */
 			if ((transfer->cmd & SWD_CMD_APNDP) ||
@@ -913,9 +918,16 @@ skip:
 
 static int cmsis_dap_swd_run_queue(void)
 {
+	/* BHDT: I do not understand why this is needed, number of FIFO packets in the probe
+	 * will never exceed dap->packet_count because backend->read() is forced in case FIFO
+	 * gets full after backend->write(), see cmsis_dap_swd_queue_cmd() below.
+	 * Add assert() just to be sure FIFO is not overrun.
+
 	if (pending_fifo_block_count)
 		cmsis_dap_swd_read_process(cmsis_dap_handle, 0);
+	*/
 
+	assert(pending_fifo_block_count < cmsis_dap_handle->packet_count);
 	cmsis_dap_swd_write_from_queue(cmsis_dap_handle);
 
 	while (pending_fifo_block_count)
@@ -930,17 +942,29 @@ static int cmsis_dap_swd_run_queue(void)
 	return retval;
 }
 
+static uint8_t alive_to;
 static void cmsis_dap_swd_queue_cmd(uint8_t cmd, uint32_t *dst, uint32_t data)
 {
+	/* BHDT: For really low SWD clocks or slow USB when running in VM */
+	if (!alive_to++)
+		keep_alive();
+
 	bool targetsel_cmd = swd_cmd(false, false, DP_TARGETSEL) == cmd;
 
 	if (pending_fifo[pending_fifo_put_idx].transfer_count == pending_queue_len
 			 || targetsel_cmd) {
+		/* BHDT: I do not understand what the following code is intended for,
+		 * but it breaks whole FIFO logic so pending_fifo_block_count is
+		 * always equal to one and no queuing is performed
+
 		if (pending_fifo_block_count)
 			cmsis_dap_swd_read_process(cmsis_dap_handle, 0);
+		*/
 
 		/* Not enough room in the queue. Run the queue. */
 		cmsis_dap_swd_write_from_queue(cmsis_dap_handle);
+		assert(pending_fifo_block_count <= cmsis_dap_handle->packet_count);
+
 
 		if (pending_fifo_block_count >= cmsis_dap_handle->packet_count)
 			cmsis_dap_swd_read_process(cmsis_dap_handle, LIBUSB_TIMEOUT_MS);
@@ -1346,7 +1370,7 @@ static void cmsis_dap_execute_sleep(struct jtag_command *cmd)
 /* Set TMS high for five TCK clocks, to move the TAP to the Test-Logic-Reset state */
 static int cmsis_dap_execute_tlr_reset(struct jtag_command *cmd)
 {
-	LOG_INFO("cmsis-dap JTAG TLR_RESET");
+	LOG_DEBUG("cmsis-dap JTAG TLR_RESET");
 	uint8_t seq = 0xff;
 
 	int retval = cmsis_dap_cmd_dap_swj_sequence(8, &seq);
@@ -2084,7 +2108,7 @@ static const struct command_registration cmsis_dap_subcommand_handlers[] = {
 };
 
 
-static const struct command_registration cmsis_dap_command_handlers[] = {
+const struct command_registration cmsis_dap_command_handlers[] = {
 	{
 		.name = "cmsis-dap",
 		.mode = COMMAND_ANY,
@@ -2104,7 +2128,7 @@ static const struct command_registration cmsis_dap_command_handlers[] = {
 		.handler = &cmsis_dap_handle_backend_command,
 		.mode = COMMAND_CONFIG,
 		.help = "set the communication backend to use (USB bulk or HID).",
-		.usage = "(auto | usb_bulk | hid)",
+		.usage = "(auto | usb_bulk | usb_bulk_async | hid)",
 	},
 #if BUILD_CMSIS_DAP_USB
 	{
@@ -2118,7 +2142,7 @@ static const struct command_registration cmsis_dap_command_handlers[] = {
 	COMMAND_REGISTRATION_DONE
 };
 
-static const struct swd_driver cmsis_dap_swd_driver = {
+struct swd_driver cmsis_dap_swd_driver = {
 	.init = cmsis_dap_swd_init,
 	.switch_seq = cmsis_dap_swd_switch_seq,
 	.read_reg = cmsis_dap_swd_read_reg,
@@ -2128,7 +2152,7 @@ static const struct swd_driver cmsis_dap_swd_driver = {
 
 static const char * const cmsis_dap_transport[] = { "swd", "jtag", NULL };
 
-static struct jtag_interface cmsis_dap_interface = {
+struct jtag_interface cmsis_dap_interface = {
 	.supported = DEBUG_CAP_TMS_SEQ,
 	.execute_queue = cmsis_dap_execute_queue,
 };

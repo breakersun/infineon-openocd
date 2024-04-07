@@ -1,7 +1,10 @@
 /***************************************************************************
  *                                                                         *
  *   Copyright (C) 2018 by Bohdan Tymkiv                                   *
- *   bohdan.tymkiv@cypress.com bohdan200@gmail.com                         *
+ *   bohdan.tymkiv@infineon.com bohdan200@gmail.com                        *
+ *                                                                         *
+ *   Copyright (C) <2019-2021>                                             *
+ *     <Cypress Semiconductor Corporation (an Infineon company)>           *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -23,24 +26,23 @@
 
 #include <time.h>
 #include <stdarg.h>
-
-#include "binarybuffer.h"
-#include "target/image.h"
-#include "log.h"
-#include "target/armv7m.h"
-#include "command.h"
-#include "imp.h"
+#include "flash/progress.h"
 
 #include "flash/nor/core.h"
 #include "flash/nor/driver.h"
-#include "target/target.h"
-#include "target/cortex_m.h"
-#include "target/breakpoints.h"
-#include "target/target_type.h"
-#include "time_support.h"
+#include "helper/binarybuffer.h"
+#include "helper/command.h"
+#include "helper/log.h"
+#include "helper/time_support.h"
+#include "imp.h"
 #include "target/algorithm.h"
+#include "target/armv7m.h"
+#include "target/breakpoints.h"
+#include "target/cortex_m.h"
 #include "target/image.h"
-#include "flash/progress.h"
+#include "target/image.h"
+#include "target/target.h"
+#include "target/target_type.h"
 
 enum cmsis_operation {
 	CMSIS_OPERATION_INVALID = 0,
@@ -88,6 +90,7 @@ struct cmsis_flash {
 	enum cmsis_operation init_op;
 	bool is_probed;
 	bool is_loaded;
+	bool prefer_sector_erase;
 	uint32_t footprint;
 	uint32_t stack_size;
 	uint32_t of_init;
@@ -111,7 +114,7 @@ struct ram_params {
 };
 
 const uint8_t program_page_wrapper[] = {
-	#include "../../../contrib/loaders/flash/flm/cypress/wrappers/program_page.inc"
+	#include "../../../contrib/loaders/flash/cmsis_flash/program_page.inc"
 };
 
 /** ***********************************************************************************************
@@ -134,7 +137,7 @@ static int cmsis_flash_load_algo(struct cmsis_flash *algo, struct target *target
 	if (hr != ERROR_OK)
 		return hr;
 
-	for (int i = 0; i < algo->image.num_sections; i++) {
+	for (unsigned int i = 0; i < algo->image.num_sections; i++) {
 		struct imagesection *section = &algo->image.sections[i];
 
 		/* Skip 'DevDscr' section, usually it is not required */
@@ -198,7 +201,7 @@ static int cmsis_flash_unload_algo(struct cmsis_flash *algo, struct target *targ
  * @param num_sectors will be populated with total number of sectors
  * @return ERROR_OK in case of success, ERROR_XXX code otherwise
  *************************************************************************************************/
-static int cmsis_flash_get_sector_num(struct cmsis_flash *algo, int *num_sectors)
+static int cmsis_flash_get_sector_num(struct cmsis_flash *algo, unsigned int *num_sectors)
 {
 	*num_sectors = 0;
 	size_t idx = 0;
@@ -363,9 +366,11 @@ cleanup:
  * @param op type of next operation
  * @return ERROR_OK in case of success, ERROR_XXX code otherwise
  *************************************************************************************************/
-static int cmsis_algo_init(struct cmsis_flash *algo, struct target *target, uint32_t address,
+static int cmsis_algo_init(struct flash_bank *bank, struct target *target, uint32_t address,
 	uint32_t clock, enum cmsis_operation op)
 {
+	struct cmsis_flash *algo = bank->driver_priv;
+
 	if (algo->init_op != CMSIS_OPERATION_INVALID) {
 		LOG_ERROR("CMSIS algorithm already initialized");
 		return ERROR_FAIL;
@@ -379,11 +384,12 @@ static int cmsis_algo_init(struct cmsis_flash *algo, struct target *target, uint
 		return hr;
 
 	if (result) {
-		LOG_ERROR("cmsis algorithm: Init operation failed");
+		LOG_ERROR("cmsis algorithm: Init operation failed (%d)", result);
 		return ERROR_FAIL;
 	}
 
 	algo->init_op = op;
+	bank->is_memory_mapped = true;
 	return ERROR_OK;
 }
 
@@ -394,8 +400,10 @@ static int cmsis_algo_init(struct cmsis_flash *algo, struct target *target, uint
  * @param op type of next operation
  * @return ERROR_OK in case of success, ERROR_XXX code otherwise
  *************************************************************************************************/
-static int cmsis_algo_uninit(struct cmsis_flash *algo, struct target *target, uint32_t op)
+static int cmsis_algo_uninit(struct flash_bank *bank, struct target *target, uint32_t op)
 {
+	struct cmsis_flash *algo = bank->driver_priv;
+
 	if (algo->init_op == CMSIS_OPERATION_INVALID) {
 		LOG_ERROR("CMSIS algorithm already uninitialized");
 		return ERROR_FAIL;
@@ -414,12 +422,38 @@ static int cmsis_algo_uninit(struct cmsis_flash *algo, struct target *target, ui
 		return hr;
 
 	if (result) {
-		LOG_ERROR("cmsis algorithm: UnInit operation failed");
+		LOG_ERROR("cmsis algorithm: UnInit operation failed (%d)", result);
 		return ERROR_FAIL;
 	}
 
 	algo->init_op = CMSIS_OPERATION_INVALID;
+	bank->is_memory_mapped = false;
 	return ERROR_OK;
+}
+
+/** ***********************************************************************************************
+ * @brief Calls BlankCheck() function of the CMSIS-PACK FlashLoader
+ * @param algo pointer to the algorithm structure returned by cmsis_algo_open()
+ * @param target current target
+ * @param addr start address of the block to check for erased state
+ * @param size size of the block to check for erased state
+ * @param is_erased erasure status: 0 = not erased, 1 = erased, other = unknown
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
+static int cmsis_algo_blank_check(struct cmsis_flash *algo, struct target *target, uint32_t addr, uint32_t size, int *is_erased)
+{
+	uint32_t result = 0;
+	int hr = cmsis_algo_execute(algo, target, algo->of_blank_check,
+				algo->flash_dev.timeout_erase, &result, 3, addr, size,
+				algo->flash_dev.val_empty);
+
+	if (hr != ERROR_OK) {
+		*is_erased = -1;
+	} else {
+		*is_erased = (result == 0) ? 1 : 0;
+	}
+
+	return hr;
 }
 
 /** ***********************************************************************************************
@@ -439,7 +473,7 @@ static int cmsis_algo_erase_sector(struct cmsis_flash *algo, struct target *targ
 		return hr;
 
 	if (result) {
-		LOG_ERROR("cmsis algorithm: EraseSector operation failed");
+		LOG_ERROR("cmsis algorithm: EraseSector operation failed (%d)", result);
 		return ERROR_FAIL;
 	}
 
@@ -464,7 +498,7 @@ static int cmsis_algo_erase_chip(struct cmsis_flash *algo, struct target *target
 		return hr;
 
 	if (result) {
-		LOG_ERROR("cmsis algorithm: EraseChip operation failed");
+		LOG_ERROR("cmsis algorithm: EraseChip operation failed (%d)", result);
 		return ERROR_FAIL;
 	}
 
@@ -492,7 +526,7 @@ static int cmsis_algo_program_page(struct cmsis_flash *algo, struct target *targ
 		return hr;
 
 	if (result) {
-		LOG_ERROR("cmsis algorithm: ProgramPage operation failed");
+		LOG_ERROR("cmsis algorithm: ProgramPage operation failed (%d)", result);
 		return ERROR_FAIL;
 	}
 
@@ -510,11 +544,16 @@ static int cmsis_flash_prepare_algo(struct flash_bank *bank, enum cmsis_operatio
 	struct cmsis_flash *algo = bank->driver_priv;
 	struct target *target = bank->target;
 
+	if (target->state != TARGET_HALTED) {
+		LOG_ERROR("Target not halted");
+		return ERROR_TARGET_NOT_HALTED;
+	}
+
 	int hr = cmsis_flash_load_algo(algo, target);
 	if (hr != ERROR_OK)
 		return hr;
 
-	hr = cmsis_algo_init(algo, target, (uint32_t)bank->base, 0, op);
+	hr = cmsis_algo_init(bank, target, (uint32_t)bank->base, 0, op);
 	if (hr != ERROR_OK)
 		cmsis_flash_unload_algo(algo, target);
 
@@ -530,10 +569,12 @@ static void cmsis_flash_release_algo(struct flash_bank *bank)
 	struct cmsis_flash *algo = bank->driver_priv;
 	struct target *target = bank->target;
 
-	cmsis_algo_uninit(algo, target, algo->init_op);
+	cmsis_algo_uninit(bank, target, algo->init_op);
 
-	/* Reinitialize algo to make sure memory is mapped */
-	cmsis_algo_init(algo, target, (uint32_t)bank->base, 0, CMSIS_OPERATION_VERIFY);
+	/* Hack: Reinitialize algo to make sure memory is mapped for read/verify/mdw */
+	cmsis_flash_unload_algo(algo, target);
+	cmsis_flash_load_algo(algo, target);
+	cmsis_algo_init(bank, target, (uint32_t)bank->base, 0, CMSIS_OPERATION_VERIFY);
 	algo->init_op = CMSIS_OPERATION_INVALID;
 
 	cmsis_flash_unload_algo(algo, target);
@@ -569,8 +610,8 @@ static int cmsis_flash_probe(struct flash_bank *bank)
 		return ERROR_FAIL;
 	}
 
-	int real_sec_num = 0;
-	for (int i = 0; i < bank->num_sectors; i++) {
+	unsigned int real_sec_num = 0;
+	for (unsigned int i = 0; i < bank->num_sectors; i++) {
 		hr = cmsis_flash_get_sector_info(algo, i, &bank->sectors[i].offset,
 				&bank->sectors[i].size);
 
@@ -592,7 +633,7 @@ static int cmsis_flash_probe(struct flash_bank *bank)
 
 	bank->write_start_alignment = algo->flash_dev.sz_page;
 	bank->write_end_alignment = algo->flash_dev.sz_page;
-	bank->minimal_write_gap = algo->flash_dev.sz_page;
+	bank->minimal_write_gap = FLASH_WRITE_GAP_SECTOR;
 	bank->erased_value = algo->flash_dev.val_empty;
 	bank->default_padded_value = algo->flash_dev.val_empty;
 	bank->bus_width = 4;
@@ -621,12 +662,55 @@ static int cmsis_flash_auto_probe(struct flash_bank *bank)
 }
 
 /** ***********************************************************************************************
+ * Provides erased-bank check handling.
+ * Uses BlankCheck function in flash loader if exists, otherwise - default_flash_blank_check
+ * @param bank current flash bank
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
+static int cmsis_flash_blank_check(struct flash_bank *bank)
+{
+	struct cmsis_flash *algo = bank->driver_priv;
+	struct target *target = bank->target;
+	int is_erased = 0;
+	int hr;
+
+	/* If optional BlankCheck function is not defined in CMSIS flash algorithms,
+	 * use default one from core.c */
+	if (algo->of_blank_check == UINT32_MAX) {
+		return default_flash_blank_check(bank);
+	}
+
+	hr = cmsis_flash_prepare_algo(bank, CMSIS_OPERATION_VERIFY);
+	if (hr != ERROR_OK)
+		return hr;
+
+	progress_init(bank->num_sectors, BLANKCHECK);
+
+	for (unsigned int i = 0; i < bank->num_sectors; i++) {
+		hr = cmsis_algo_blank_check(algo, target,
+				bank->base + bank->sectors[i].offset,
+				 bank->sectors[i].size, &is_erased);
+		bank->sectors[i].is_erased = is_erased;
+
+		if (hr != ERROR_OK)
+			goto release;
+
+		progress_sofar(i);
+	}
+
+release:
+	progress_done(hr);
+	cmsis_flash_release_algo(bank);
+	return hr;
+}
+
+/** ***********************************************************************************************
  * @brief Dummy function, protect check operation is not supported by this driver
  * @return ERROR_OK always
  *************************************************************************************************/
 static int cmsis_flash_protect_check(struct flash_bank *bank)
 {
-	for (int i = 0; i < bank->num_sectors; i++)
+	for (unsigned int i = 0; i < bank->num_sectors; i++)
 		bank->sectors[i].is_protected = false;
 
 	return ERROR_OK;
@@ -636,7 +720,7 @@ static int cmsis_flash_protect_check(struct flash_bank *bank)
  * @brief Dummy function, protect operation is not supported by this driver
  * @return ERROR_FAIL always
  *************************************************************************************************/
-static int cmsis_flash_protect(struct flash_bank *bank, int set, int first, int last)
+static int cmsis_flash_protect(struct flash_bank *bank, int set, unsigned int first, unsigned int last)
 {
 	(void)bank; (void)set; (void)first; (void)last;
 
@@ -651,7 +735,7 @@ static int cmsis_flash_protect(struct flash_bank *bank, int set, int first, int 
  * @param last last sector to erase
  * @return ERROR_OK in case of success, ERROR_XXX code otherwise
  *************************************************************************************************/
-static int cmsis_flash_erase(struct flash_bank *bank, int first, int last)
+static int cmsis_flash_erase(struct flash_bank *bank, unsigned int first, unsigned int last)
 {
 	struct cmsis_flash *algo = bank->driver_priv;
 	struct target *target = bank->target;
@@ -663,12 +747,14 @@ static int cmsis_flash_erase(struct flash_bank *bank, int first, int last)
 
 	progress_init(last - first + 1, ERASING);
 
-	if (bank->num_sectors == last - first + 1 && algo->of_erase_chip != UINT32_MAX) {
+	if (bank->num_sectors == last - first + 1 && algo->of_erase_chip != UINT32_MAX
+			&& !algo->prefer_sector_erase) {
+		LOG_INFO("Using EraseChip API to erase '%s' bank, this may take several minutes...", bank->name);
 		hr = cmsis_algo_erase_chip(algo, target, bank->num_sectors * algo->flash_dev.timeout_erase);
 		goto release;
 	}
 
-	for (int i = first; i <= last; i++) {
+	for (unsigned int i = first; i <= last; i++) {
 		hr = cmsis_algo_erase_sector(algo, target, bank->base + bank->sectors[i].offset);
 		if (hr != ERROR_OK)
 			goto release;
@@ -771,7 +857,7 @@ static int cmsis_flash_program(struct flash_bank *bank, const uint8_t *buffer, u
 	uint32_t buffer_size = 16 * algo->flash_dev.sz_page;
 	while (target_alloc_working_area_try(target, buffer_size + 8, &wa_buffer) != ERROR_OK) {
 		buffer_size -= algo->flash_dev.sz_page;
-		if (buffer_size <= 4 * algo->flash_dev.sz_page) {
+		if (buffer_size < 3 * algo->flash_dev.sz_page) {
 			LOG_WARNING("Failed to allocate circular buffer, will use slow algorithm");
 
 			target_free_working_area(target, wa_params);
@@ -809,7 +895,7 @@ static int cmsis_flash_program(struct flash_bank *bank, const uint8_t *buffer, u
 	buf_set_u32(reg_params[2].value, 0, 32, algo->algo_wa->address + algo->algo_wa->size);
 
 	hr = target_run_flash_async_algorithm(target, buffer, rp.num_pages, rp.page_size,
-			0, NULL, 3, reg_params,
+			0, NULL, ARRAY_SIZE(reg_params), reg_params,
 			wa_buffer->address, wa_buffer->size,
 			wa_wrapper->address, 0, &armv7m_algo);
 
@@ -835,14 +921,40 @@ exit_release_algo:
  * @param buf_size size of the buffer
  * @return ERROR_OK in case of success, ERROR_XXX code otherwise
  *************************************************************************************************/
-static int cmsis_flash_get_info(struct flash_bank *bank, char *buf, int buf_size)
+static int cmsis_flash_get_info(struct flash_bank *bank, struct command_invocation *cmd)
 {
 	struct cmsis_flash *algo = bank->driver_priv;
 
 	if (algo->is_probed == false)
 		return ERROR_FAIL;
 
-	snprintf(buf, buf_size, "CMSIS Flash Device: %s", algo->flash_dev.dev_name);
+	command_print(cmd, "CMSIS Flash Device: %s", algo->flash_dev.dev_name);
+	command_print(cmd, " Address range: 0x%08" PRIx32 " - 0x%08" PRIx32,
+		algo->flash_dev.dev_addr, algo->flash_dev.dev_addr + algo->flash_dev.sz_dev -1);
+	command_print(cmd, " Program page size: %" PRIu32 " bytes", algo->flash_dev.sz_page);
+	command_print(cmd, " Sectors:");
+
+	unsigned i = 0;
+	uint32_t group_start;
+	uint32_t group_next;
+	do {
+		group_start = algo->flash_dev.sectors[i].addr;
+		group_next = algo->flash_dev.sectors[i + 1].addr;
+		uint32_t group_sec_size = algo->flash_dev.sectors[i].size;
+		if (group_next == UINT32_MAX)
+			group_next = algo->flash_dev.sz_dev;
+
+		if((group_next - group_start) % group_sec_size) {
+			LOG_ERROR("Invalid sector alignment, the 'FlashDevice' structure is invalid");
+			break;
+		}
+
+		unsigned num_sectors = (group_next - group_start) / group_sec_size;
+		command_print(cmd, "  %4" PRIu32 " x %-7" PRIu32 " bytes @ 0x%08" PRIx32, num_sectors, group_sec_size,
+					  algo->flash_dev.dev_addr + group_start);
+		i++;
+	} while(group_next < algo->flash_dev.sz_dev);
+
 	return ERROR_OK;
 }
 
@@ -862,15 +974,15 @@ static void cmsis_flash_free_driver_priv(struct flash_bank *bank)
 	}
 }
 
-/* flash bank <name> cmsis_flash <addr> <size> 0 0 <target> <algorithm_elf> <stack_size> */
+/* flash bank <name> cmsis_flash <addr> <size> 0 0 <target> <algorithm_elf> <stack_size> [prefer_sector_erase]*/
 FLASH_BANK_COMMAND_HANDLER(cmsis_flash_bank_command)
 {
-	if (CMD_ARGC != 8) {
-		LOG_ERROR("cmsis_flash: wrong number of params. usage:"
-			"'flash bank <name> cmsis_flash <addr:0> <size:0> 0 0 <target> "
-			"<algorithm_elf> <stack_size>'");
+	if (CMD_ARGC < 8 || CMD_ARGC > 9) {
+		LOG_ERROR("cmsis_flash: wrong number of params");
 		return ERROR_COMMAND_SYNTAX_ERROR;
 	}
+
+	bank->is_memory_mapped = false;
 
 	const char *algo_url = CMD_ARGV[6];
 	uint32_t stack_size = strtol(CMD_ARGV[7], NULL, 0);
@@ -888,14 +1000,20 @@ FLASH_BANK_COMMAND_HANDLER(cmsis_flash_bank_command)
 
 	algo->stack_size = stack_size;
 
+	if(CMD_ARGC == 9) {
+		if(strcmp(CMD_ARGV[8], "prefer_sector_erase") == 0) {
+			algo->prefer_sector_erase = true;
+		} else {
+			LOG_ERROR("cmsis_flash: unknown parameter '%s'", CMD_ARGV[8]);
+			free(algo);
+			return ERROR_COMMAND_SYNTAX_ERROR;
+		}
+	}
+
 	/* Open Flash Loader image */
 	int hr = image_open(&algo->image, algo_url, "elf");
 	if (hr != ERROR_OK)
 		goto free_algo;
-
-	/* Initialize all symbol offsets to some invalid value */
-	for (size_t i = 0; i < sizeof(cmsis_symbols) / sizeof(cmsis_symbols[0]); i++)
-		cmsis_symbols[i].offset = UINT32_MAX;
 
 	/* Resolve all required and optional symbols */
 	hr = image_resolve_symbols(&algo->image, cmsis_symbols);
@@ -919,7 +1037,7 @@ FLASH_BANK_COMMAND_HANDLER(cmsis_flash_bank_command)
 		algo->of_program_page == UINT32_MAX ||
 		algo->of_flash_device == UINT32_MAX ||
 		algo->of_prg_data == UINT32_MAX) {
-		LOG_ERROR("cmsis_flash: alforithm does not define all required symbols");
+		LOG_ERROR("cmsis_flash: algorithm does not define all required symbols");
 		hr = ERROR_IMAGE_FORMAT_ERROR;
 		goto close_free_algo;
 	}
@@ -929,7 +1047,7 @@ FLASH_BANK_COMMAND_HANDLER(cmsis_flash_bank_command)
 	size_t max_addr = 0;
 
 	bool flash_dev_found = false;
-	for (int i = 0; i < algo->image.num_sections; i++) {
+	for (unsigned int i = 0; i < algo->image.num_sections; i++) {
 		struct imagesection *section = &algo->image.sections[i];
 
 		if (section->base_address == algo->of_flash_device) {
@@ -958,15 +1076,40 @@ FLASH_BANK_COMMAND_HANDLER(cmsis_flash_bank_command)
 			max_addr = section->base_address + section->size;
 	}
 
-	/* Calculate total footprint of the loadable sections */
-	algo->footprint = max_addr - min_addr;
-	LOG_INFO("Using CMSIS loader '%s' for bank '%s' (footprint %d bytes)",
-		algo->flash_dev.dev_name, bank->name, algo->footprint);
-
 	if (!flash_dev_found) {
 		LOG_ERROR("cmsis_flash: 'FlashDev' structure can not be found");
 		hr = ERROR_IMAGE_FORMAT_ERROR;
 		goto close_free_algo;
+	} else {
+
+		/* Calculate total footprint of the loadable sections */
+		algo->footprint = max_addr - min_addr;
+		LOG_INFO("Using CMSIS-flash algorithms '%s' for bank '%s' (footprint %d bytes)",
+			algo->flash_dev.dev_name, bank->name, algo->footprint);
+
+		/* Print basic flash loader information */
+		LOG_INFO("CMSIS-flash: ELF path: %s", algo_url);
+		LOG_INFO("CMSIS-flash: Address range:     0x%08X-0x%08X",
+			algo->flash_dev.dev_addr, algo->flash_dev.dev_addr + algo->flash_dev.sz_dev -1);
+		LOG_INFO("CMSIS-flash: Program page size: 0x%08X bytes", algo->flash_dev.sz_page);
+		/* Validate the 'FlashDevice' structure and calculate total number of sectors */
+		unsigned int num_sectors;
+		hr = cmsis_flash_get_sector_num(algo, &num_sectors);
+		if (hr == ERROR_OK) {
+
+			/* Check how many 'FlashSectors' records (less than the number of sectors) */
+			const struct cmsis_flash_sectors *sect = algo->flash_dev.sectors;
+			uint32_t idx = 0;
+			while ((idx < num_sectors) && (sect[idx].addr != UINT32_MAX)) idx++;
+			num_sectors = idx;
+
+			/* Print the erase sector description */
+			if (num_sectors == 1) {
+				LOG_INFO("CMSIS-flash: Erase sector size: 0x%08X bytes, unified", sect[0].size);
+			} else for (idx = 0; idx < num_sectors; idx++) {
+				LOG_INFO("CMSIS-flash: Erase sector [%u]: 0x%08X bytes @ 0x%08X", idx, sect[idx].size, sect[idx].addr);
+			}
+		}
 	}
 
 	bank->driver_priv = algo;
@@ -1009,12 +1152,9 @@ COMMAND_HANDLER(cmsis_flash_initialize)
 		LOG_INFO("Initializing cmsis_flash bank %s (%s)", name, algo->flash_dev.dev_name);
 		was_initialized = true;
 
-		enum log_levels lvl = change_debug_level(LOG_LVL_USER);
 		int hr = cmsis_flash_prepare_algo(bank, CMSIS_OPERATION_VERIFY);
 		if(hr == ERROR_OK)
 			cmsis_flash_release_algo(bank);
-
-		change_debug_level(lvl);
 
 		if(hr != ERROR_OK)
 			LOG_ERROR("Failed to initialize bank %s", name);
@@ -1028,6 +1168,55 @@ COMMAND_HANDLER(cmsis_flash_initialize)
 	return ERROR_OK;
 }
 
+COMMAND_HANDLER(prefer_sector_erase)
+{
+	int arg_index_bank = -1;
+	const char *arg_str_onoff = NULL;
+
+	if(CMD_ARGC == 1) {
+		arg_str_onoff = CMD_ARGV[0];
+	} else if(CMD_ARGC == 2) {
+		arg_index_bank = 0; /* CMD_ARGV[0] */
+		arg_str_onoff = CMD_ARGV[1];
+	} else {
+		LOG_ERROR("cmsis_flash prefer_sector_erase: wrong number of params");
+		return ERROR_COMMAND_SYNTAX_ERROR;
+	}
+	
+	/* Parse on/off parameter accepting any of following: "on|off|enable|disable|yes|no|true|false|1|0" */
+	bool arg_onoff = false;
+	int retval = command_parse_bool_arg(arg_str_onoff, &arg_onoff);
+	if (ERROR_OK != retval) {
+		LOG_ERROR("cmsis_flash prefer_sector_erase: wrong arguments");
+		return ERROR_COMMAND_SYNTAX_ERROR;
+	}
+
+	if (arg_index_bank >= 0) {
+		/* Optional bank Id is provided, apply for specified bank only */
+		struct flash_bank *bank;
+		retval = CALL_COMMAND_HANDLER(flash_command_get_bank, arg_index_bank, &bank);
+		if ((ERROR_OK != retval) || (strcmp("cmsis_flash", bank->driver->name) != 0)) {
+			LOG_ERROR("cmsis_flash prefer_sector_erase: wrong bank_id or driver is not cmsis_flash");
+			return ERROR_COMMAND_SYNTAX_ERROR;
+		}
+		struct cmsis_flash *algo = bank->driver_priv;
+		LOG_INFO("Setting \'prefer_sector_erase %s\' for cmsis_flash bank %s (%s)", arg_str_onoff, bank->name, algo->flash_dev.dev_name);
+		algo->prefer_sector_erase = arg_onoff;
+	} else {
+		/* Bank Id is not provided, apply for all banks */
+		for(struct flash_bank *bank_iter = flash_bank_list(); bank_iter; bank_iter = bank_iter->next) {
+			struct flash_bank *bank = bank_iter;
+			if(strcmp("cmsis_flash", bank->driver->name) != 0)
+				continue;
+			struct cmsis_flash *algo = bank->driver_priv;
+			LOG_INFO("Setting \'prefer_sector_erase %s\' for cmsis_flash bank %s (%s)", arg_str_onoff, bank->name, algo->flash_dev.dev_name);
+			algo->prefer_sector_erase = arg_onoff;
+		}
+	}
+
+	return ERROR_OK;
+}
+
 static const struct command_registration cmsis_flash_exec_command_handlers[] = {
 	{
 		.name = "init",
@@ -1036,6 +1225,13 @@ static const struct command_registration cmsis_flash_exec_command_handlers[] = {
 		.usage = "[bank name]",
 		.help = "initializes all cmsis_flash banks",
 	},
+	{
+		.name = "prefer_sector_erase",
+		.handler = prefer_sector_erase,
+		.mode = COMMAND_EXEC,
+		.usage = "[bank_id] <on|off|enable|disable|yes|no|true|false|1|0>",
+		.help = "sets prefer_sector_erase property",
+	},
 	COMMAND_REGISTRATION_DONE
 };
 
@@ -1043,24 +1239,37 @@ static const struct command_registration cmsis_flash_command_handlers[] = {
 	{
 		.name = "cmsis_flash",
 		.mode = COMMAND_EXEC,
-		.help = "PSoC 6 flash command group",
+		.help = "cmsis_flash command group",
 		.usage = "",
 		.chain = cmsis_flash_exec_command_handlers,
 	},
 	COMMAND_REGISTRATION_DONE
 };
 
+static int cmsis_flash_read(struct flash_bank *bank, uint8_t *buffer, uint32_t offset, uint32_t count) {
+	int hr = cmsis_flash_prepare_algo(bank, CMSIS_OPERATION_VERIFY);
+	if (hr != ERROR_OK)
+		return hr;
+
+	hr = default_flash_read(bank, buffer, offset, count);
+
+	cmsis_flash_release_algo(bank);
+	return hr;
+}
+
 struct flash_driver cmsis_flash = {
+	.usage = "$_FLASHNAME cmsis_flash <addr:0> <size:0> 0 0 <target> "
+			 "<algorithm_elf> <stack_size> [prefer_sector_erase]",
 	.name = "cmsis_flash",
 	.commands = cmsis_flash_command_handlers,
 	.flash_bank_command = cmsis_flash_bank_command,
 	.erase = cmsis_flash_erase,
 	.protect = cmsis_flash_protect,
 	.write = cmsis_flash_program,
-	.read = default_flash_read,
+	.read = cmsis_flash_read,
 	.probe = cmsis_flash_probe,
 	.auto_probe = cmsis_flash_auto_probe,
-	.erase_check = default_flash_blank_check,
+	.erase_check = cmsis_flash_blank_check,
 	.protect_check = cmsis_flash_protect_check,
 	.info = cmsis_flash_get_info,
 	.free_driver_priv = cmsis_flash_free_driver_priv,

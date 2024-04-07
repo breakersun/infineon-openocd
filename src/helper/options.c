@@ -1,22 +1,11 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+
 /***************************************************************************
  *   Copyright (C) 2004, 2005 by Dominic Rath                              *
  *   Dominic.Rath@gmx.de                                                   *
  *                                                                         *
  *   Copyright (C) 2007-2010 Øyvind Harboe                                 *
  *   oyvind.harboe@zylin.com                                               *
- *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
- *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 2 of the License, or     *
- *   (at your option) any later version.                                   *
- *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
- *   GNU General Public License for more details.                          *
- *                                                                         *
- *   You should have received a copy of the GNU General Public License     *
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -31,17 +20,22 @@
 
 #include <limits.h>
 #include <stdlib.h>
+#include <string.h>
 #if IS_DARWIN
 #include <libproc.h>
 #endif
+/* sys/sysctl.h is deprecated on Linux from glibc 2.30 */
+#ifndef __linux__
 #ifdef HAVE_SYS_SYSCTL_H
 #include <sys/sysctl.h>
+#endif
 #endif
 #if IS_WIN32 && !IS_CYGWIN
 #include <windows.h>
 #endif
 
 static int help_flag, version_flag;
+int telnet_add_prefix;
 
 static const struct option long_options[] = {
 	{"help",		no_argument,			&help_flag,		1},
@@ -51,7 +45,7 @@ static const struct option long_options[] = {
 	{"search",		required_argument,		0,				's'},
 	{"log_output",	required_argument,		0,				'l'},
 	{"command",		required_argument,		0,				'c'},
-	{"pipe",		no_argument,			0,				'p'},
+	{"gui",			no_argument,			0,				'g'},
 	{0, 0, 0, 0}
 };
 
@@ -72,7 +66,7 @@ static char *find_exe_path(void)
 	do {
 #if IS_WIN32 && !IS_CYGWIN
 		exepath = malloc(MAX_PATH);
-		if (exepath == NULL)
+		if (!exepath)
 			break;
 		GetModuleFileName(NULL, exepath, MAX_PATH);
 
@@ -84,7 +78,7 @@ static char *find_exe_path(void)
 
 #elif IS_DARWIN
 		exepath = malloc(PROC_PIDPATHINFO_MAXSIZE);
-		if (exepath == NULL)
+		if (!exepath)
 			break;
 		if (proc_pidpath(getpid(), exepath, PROC_PIDPATHINFO_MAXSIZE) <= 0) {
 			free(exepath);
@@ -96,7 +90,7 @@ static char *find_exe_path(void)
 #define PATH_MAX 1024
 #endif
 		char *path = malloc(PATH_MAX);
-		if (path == NULL)
+		if (!path)
 			break;
 		int mib[] = { CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1 };
 		size_t size = PATH_MAX;
@@ -114,14 +108,14 @@ static char *find_exe_path(void)
 #elif defined(HAVE_REALPATH) /* Assume POSIX.1-2008 */
 		/* Try Unices in order of likelihood. */
 		exepath = realpath("/proc/self/exe", NULL); /* Linux/Cygwin */
-		if (exepath == NULL)
+		if (!exepath)
 			exepath = realpath("/proc/self/path/a.out", NULL); /* Solaris */
-		if (exepath == NULL)
+		if (!exepath)
 			exepath = realpath("/proc/curproc/file", NULL); /* FreeBSD (Should be covered above) */
 #endif
 	} while (0);
 
-	if (exepath != NULL) {
+	if (exepath) {
 		/* Strip executable file name, leaving path */
 		*strrchr(exepath, '/') = '\0';
 	} else {
@@ -143,8 +137,8 @@ static char *find_relative_path(const char *from, const char *to)
 
 	/* Skip common /-separated parts of from and to */
 	i = 0;
-	for (size_t n = 0; from[n] == to[n]; n++) {
-		if (from[n] == '\0') {
+	for (size_t n = 0; from[n] == to[n] || !from[n] || !to[n]; n++) {
+		if (!from[n] || !to[n]) {
 			i = n;
 			break;
 		}
@@ -160,7 +154,7 @@ static char *find_relative_path(const char *from, const char *to)
 		if (from[0] != '/')
 			i++;
 		char *next = strchr(from, '/');
-		if (next == NULL)
+		if (!next)
 			break;
 		from = next + 1;
 	}
@@ -170,9 +164,71 @@ static char *find_relative_path(const char *from, const char *to)
 	relpath[0] = '\0';
 	for (size_t n = 0; n < i; n++)
 		strcat(relpath, "../");
+
+	i = strlen(relpath);
+	if (*to == '\0' && i && relpath[i - 1] == '/')
+		relpath[i - 1] = '\0';
+
 	strcat(relpath, to);
 
 	return relpath;
+}
+
+static void add_user_dirs(void)
+{
+	char *path;
+
+#if IS_WIN32
+	const char *appdata = getenv("APPDATA");
+
+	if (appdata) {
+		path = alloc_printf("%s/OpenOCD", appdata);
+		if (path) {
+			/* Convert path separators to UNIX style, should work on Windows also. */
+			for (char *p = path; *p; p++) {
+				if (*p == '\\')
+					*p = '/';
+			}
+			add_script_search_dir(path);
+			free(path);
+		}
+	}
+	/* WIN32 may also have HOME defined, particularly under Cygwin, so add those paths below too */
+#endif
+
+	const char *home = getenv("HOME");
+#if IS_DARWIN
+	if (home) {
+		path = alloc_printf("%s/Library/Preferences/org.openocd", home);
+		if (path) {
+			add_script_search_dir(path);
+			free(path);
+		}
+	}
+#endif
+	const char *xdg_config = getenv("XDG_CONFIG_HOME");
+
+	if (xdg_config) {
+		path = alloc_printf("%s/openocd", xdg_config);
+		if (path) {
+			add_script_search_dir(path);
+			free(path);
+		}
+	} else if (home) {
+		path = alloc_printf("%s/.config/openocd", home);
+		if (path) {
+			add_script_search_dir(path);
+			free(path);
+		}
+	}
+
+	if (home) {
+		path = alloc_printf("%s/.openocd", home);
+		if (path) {
+			add_script_search_dir(path);
+			free(path);
+		}
+	}
 }
 
 static void add_default_dirs(void)
@@ -191,32 +247,11 @@ static void add_default_dirs(void)
 	 * listed last in the built-in search order, so the user can
 	 * override these scripts with site-specific customizations.
 	 */
-	const char *home = getenv("HOME");
-
-	if (home) {
-		path = alloc_printf("%s/.openocd", home);
-		if (path) {
-			add_script_search_dir(path);
-			free(path);
-		}
-	}
-
 	path = getenv("OPENOCD_SCRIPTS");
-
 	if (path)
 		add_script_search_dir(path);
 
-#ifdef _WIN32
-	const char *appdata = getenv("APPDATA");
-
-	if (appdata) {
-		path = alloc_printf("%s/OpenOCD", appdata);
-		if (path) {
-			add_script_search_dir(path);
-			free(path);
-		}
-	}
-#endif
+	add_user_dirs();
 
 	path = alloc_printf("%s/%s/%s", exepath, bin2data, "site");
 	if (path) {
@@ -242,7 +277,7 @@ int parse_cmdline_args(struct command_context *cmd_ctx, int argc, char *argv[])
 		/* getopt_long stores the option index here. */
 		int option_index = 0;
 
-		c = getopt_long(argc, argv, "hvd::l:f:s:c:p", long_options, &option_index);
+		c = getopt_long(argc, argv, "hvd::l:f:s:c:g", long_options, &option_index);
 
 		/* Detect the end of the options. */
 		if (c == -1)
@@ -269,30 +304,21 @@ int parse_cmdline_args(struct command_context *cmd_ctx, int argc, char *argv[])
 				break;
 			case 'd':		/* --debug | -d */
 			{
-				char *command = alloc_printf("debug_level %s", optarg ? optarg : "3");
-				int retval = command_run_line(cmd_ctx, command);
-				free(command);
+				int retval = command_run_linef(cmd_ctx, "debug_level %s", optarg ? optarg : "3");
 				if (retval != ERROR_OK)
 					return retval;
 				break;
 			}
 			case 'l':		/* --log_output | -l */
-				if (optarg) {
-					char *command = alloc_printf("log_output %s", optarg);
-					command_run_line(cmd_ctx, command);
-					free(command);
-				}
+				if (optarg)
+					command_run_linef(cmd_ctx, "log_output %s", optarg);
 				break;
 			case 'c':		/* --command | -c */
 				if (optarg)
 				    add_config_command(optarg);
 				break;
-			case 'p':
-				/* to replicate the old syntax this needs to be synchronous
-				 * otherwise the gdb stdin will overflow with the warning message */
-				command_run_line(cmd_ctx, "gdb_port pipe; log_output openocd.log");
-				LOG_WARNING("deprecated option: -p/--pipe. Use '-c \"gdb_port pipe; "
-						"log_output openocd.log\"' instead.");
+			case 'g':
+				telnet_add_prefix = 1;
 				break;
 			default:  /* '?' */
 				/* getopt will emit an error message, all we have to do is bail. */
@@ -316,6 +342,7 @@ int parse_cmdline_args(struct command_context *cmd_ctx, int argc, char *argv[])
 		LOG_OUTPUT("             | -d<n>\tset debug level to <level>\n");
 		LOG_OUTPUT("--log_output | -l\tredirect log output to file <name>\n");
 		LOG_OUTPUT("--command    | -c\trun <command>\n");
+		LOG_OUTPUT("--gui        | -g\tprint message prefixes in telnet connections\n");
 		exit(-1);
 	}
 

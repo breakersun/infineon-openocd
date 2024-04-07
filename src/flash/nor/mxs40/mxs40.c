@@ -1,8 +1,11 @@
 /***************************************************************************
  *                                                                         *
  *   Copyright (C) 2019 by Bohdan Tymkiv, Mykola Tuzyak                    *
- *   bohdan.tymkiv@cypress.com bohdan200@gmail.com                         *
- *   mykola.tyzyak@cypress.com                                             *
+ *   bohdan.tymkiv@infineon.com bohdan200@gmail.com                        *
+ *   mykola.tyzyak@infineon.com                                            *
+ *                                                                         *
+ *   Copyright (C) <2019-2021>                                             *
+ *     <Cypress Semiconductor Corporation (an Infineon company)>           *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -22,24 +25,21 @@
 #include "flash/nor/mxs40/mxs40.h"
 
 #include "flash/nor/imp.h"
-#include "target/target.h"
-#include "target/cortex_m.h"
-#include "target/breakpoints.h"
-#include "target/target_type.h"
-#include "time_support.h"
-#include "target/algorithm.h"
-#include "target/image.h"
 #include "flash/progress.h"
-#include "target/register.h"
+#include "helper/time_support.h"
 #include "rtos/rtos.h"
+#include "target/algorithm.h"
+#include "target/arm_adi_v5.h"
+#include "target/breakpoints.h"
+#include "target/cortex_m.h"
+#include "target/image.h"
+#include "target/register.h"
+#include "target/target.h"
 
 static struct working_area *g_stack_area;
 static struct armv7m_algorithm g_armv7m_info;
 static uint32_t g_sflash_restrictions;
-
-/* Safe SFLASH regions */
-static size_t g_num_sflash_regions;
-static struct row_region *g_sflash_regions;
+static bool g_sromcall_prepare_called;
 
 enum operation {
 	PROGRAM,
@@ -146,11 +146,6 @@ static int mxs40_ipc_poll_lock_stat(struct flash_bank *bank, bool lock_expected)
 			return ERROR_OK;
 	}
 
-	if (target->coreid) {
-		LOG_WARNING("SROM API calls via CM4 target are supported on single-core MXS40 devices only. "
-			"Please perform all Flash-related operations via CM0+ target on dual-core devices.");
-	}
-
 	LOG_ERROR("Timeout polling IPC Lock Status");
 	return ERROR_TARGET_TIMEOUT;
 }
@@ -175,22 +170,30 @@ static int mxs40_ipc_acquire(struct flash_bank *bank)
 	struct mxs40_bank_info *info = bank->driver_priv;
 
 	mxs40_timeout_init(&to, IPC_TIMEOUT_MS);
-
 	while (!mxs40_timeout_expired(&to)) {
 		keep_alive();
 
-		hr = target_write_u32(target,
-				info->regs->ipc_acquire,
-				IPC_ACQUIRE_SUCCESS_MSK);
+		/* Workaround for double-buffered PPU */
+		if (info->regs->ppu_flush) {
+			enum log_levels level = change_debug_level(LOG_LVL_USER);
+			hr = target_read_u32(target, info->regs->ppu_flush, &reg_val);
+			change_debug_level(level);
+			info->ppu_read_protected = (hr != ERROR_OK);
+		}
+
+		/* Acquire the IPC structure */
+		hr = target_write_u32(target, info->regs->ipc_acquire, IPC_ACQUIRE_SUCCESS_MSK);
 		if (hr != ERROR_OK) {
-			LOG_ERROR("Unable to write to IPC Acquire register");
+			LOG_ERROR("Unable to write to IPC Acquire register%s",
+					  info->ppu_read_protected ? " (PPU read-protected)" : "");
 			return hr;
 		}
 
 		/* Check if data is written on first step */
 		hr = target_read_u32(target, info->regs->ipc_acquire, &reg_val);
 		if (hr != ERROR_OK) {
-			LOG_ERROR("Unable to read IPC Acquire register");
+			LOG_ERROR("Unable to read IPC Acquire register%s",
+					  info->ppu_read_protected ? " (PPU read-protected)" : "");
 			return hr;
 		}
 
@@ -204,32 +207,6 @@ static int mxs40_ipc_acquire(struct flash_bank *bank)
 
 	if (!is_acquired)
 		LOG_ERROR("Timeout acquiring IPC structure");
-
-	return hr;
-}
-
-/** ***********************************************************************************************
- * @brief Performs initial setup of the Traveo-II target
- * @param bank The flash bank
- * @return ERROR_OK in case of success, ERROR_XXX code otherwise
- *************************************************************************************************/
-int mxs40_traveo_setup(struct flash_bank *bank)
-{
-	int hr = target_write_u32(bank->target, 0x4024F400, 0x01);
-	if (hr != ERROR_OK)
-		return hr;
-
-	hr = target_write_u32(bank->target, 0x4024F500, 0x01);
-	if (hr != ERROR_OK)
-		return hr;
-
-	hr = target_write_u32(bank->target, 0xE000E280, 0x03);
-	if (hr != ERROR_OK)
-		return hr;
-
-	hr = target_write_u32(bank->target, 0xE000E100, 0x03);
-	if (hr != ERROR_OK)
-		return hr;
 
 	return hr;
 }
@@ -282,6 +259,38 @@ uint32_t mxs40_probe_mem_area(struct target *target, target_addr_t start_addr, u
 
 	return area_size;
 }
+
+/** ***********************************************************************************************
+ * @brief Locates CM0 core of this chip (if present)
+ * @param this_target current target, name should end with 'sysap'
+ * @return pointer to CM0 core (of NULL)
+ *************************************************************************************************/
+static struct target *mxs40_find_core_by_suffix(struct target *target, const char *suffix)
+{
+	const size_t this_len = strlen(target->cmd_name);
+	size_t last_dot_pos;
+	for(last_dot_pos = this_len; last_dot_pos; last_dot_pos--) {
+		if(target->cmd_name[last_dot_pos] == '.')
+			break;
+	}
+
+	assert(last_dot_pos != 0);
+
+	last_dot_pos++;
+	char *new_name = calloc(1, last_dot_pos + strlen(suffix) + 1);
+	memcpy(new_name, target->cmd_name, last_dot_pos);
+	new_name = strcat(new_name, suffix);
+
+	struct target *result = NULL;
+	for (result = all_targets; result; result = result->next) {
+		if (target_name(result) && strcmp(new_name, target_name(result)) == 0)
+			break;
+	}
+
+	free(new_name);
+	return result;
+}
+
 /** ***********************************************************************************************
  * @brief Starts pseudo flash algorithm and leaves it running. Function allocates working area for
  * algorithm code and CPU stack, adjusts stack pointer, uploads and starts the algorithm.
@@ -293,12 +302,14 @@ uint32_t mxs40_probe_mem_area(struct target *target, target_addr_t start_addr, u
 int mxs40_sromalgo_prepare(struct flash_bank *bank)
 {
 	struct target *target = bank->target;
-	if(target->coreid == 0xFF) { /* Special core_id for fake SysAP */
-		if(target->next && target->next->coreid == 1) {
-			target = target->next;
-		} else {
+
+	/* Special core_id for fake SysAP */
+	if(target->coreid == 0xFF) {
+		struct target *cm0_target = mxs40_find_core_by_suffix(target, "cm0");
+		if(!cm0_target)
 			return ERROR_OK;
-		}
+
+		target = cm0_target;
 	}
 
 	if (target->state != TARGET_HALTED) {
@@ -306,8 +317,30 @@ int mxs40_sromalgo_prepare(struct flash_bank *bank)
 		return ERROR_TARGET_NOT_HALTED;
 	}
 
+	int hr;
+
+	struct mxs40_bank_info *info = bank->driver_priv;
+	if(info->prepare_function) {
+		hr = info->prepare_function(bank);
+		if (hr != ERROR_OK)
+			return hr;
+	}
+
+	/* Check if IPC_INTR_MASK contains valid value */
+	uint32_t ipc_intr;
+	hr = target_read_u32(target, info->regs->ipc_intr, &ipc_intr);
+	if (hr != ERROR_OK)
+		return hr;
+
+	/* Enable notification interrupt of IPC_INTR_STRUCT for IPC_STRUCT2 */
+	if(!(ipc_intr & info->regs->ipc_intr_msk)) {
+		hr = target_write_u32(target, info->regs->ipc_intr, ipc_intr | info->regs->ipc_intr_msk);
+		if (hr != ERROR_OK)
+			return hr;
+	}
+
 	/* Initialize Vector Table Offset register (in case FW modified it) */
-	int hr = target_write_u32(target, NVIC_VTOR, 0x00000000);
+	hr = target_write_u32(target, NVIC_VTOR, 0x00000000);
 	if (hr != ERROR_OK)
 		return hr;
 
@@ -364,18 +397,19 @@ destroy_rp_free_wa:
  *************************************************************************************************/
 void mxs40_sromalgo_release(struct target *target)
 {
-	int hr = ERROR_OK;
-
-	if(target->coreid == 0xFF) { /* Special core_id for fake SysAP */
-		if(target->next && target->next->coreid == 1) {
-			target = target->next;
-		}
-	}
-
 	if (g_stack_area) {
+		/* Special core_id for fake SysAP */
+		if(target->coreid == 0xFF) {
+			struct target *cm0_target = mxs40_find_core_by_suffix(target, "cm0");
+			if(!cm0_target)
+				return;
+
+			target = cm0_target;
+		}
+
 		/* Stop flash algorithm if it is running */
 		if (target->running_alg) {
-			hr = target_halt(target);
+			int hr = target_halt(target);
 			if (hr != ERROR_OK)
 				goto exit_free_wa;
 
@@ -398,16 +432,23 @@ exit_free_wa:
  * @param bank current flash bank
  * @param req_and_params requect id of the function to invoke
  * @param working_area address of memory buffer in target's memory space for SROM API parameters
+ * @param check_errors true if error check and reporting should be performed
  * @param data_out pointer to variable which will be populated with execution status
  * @return ERROR_OK in case of success, ERROR_XXX code otherwise
  *************************************************************************************************/
-int mxs40_call_sromapi(struct flash_bank *bank,
-	uint32_t req_and_params,
-	uint32_t working_area,
-	uint32_t *data_out)
+int mxs40_call_sromapi_inner(struct flash_bank *bank, uint32_t req_and_params, uint32_t working_area,
+    bool check_errors, uint32_t *data_out)
 {
+    LOG_DEBUG("Executing SROM API #0x%08X", req_and_params);
+
+    struct target *target = bank->target;
+
+	if(!g_stack_area && target->coreid != 0xFF) {
+		LOG_ERROR("SROM Call: target is not prepared for srom calls");
+		return ERROR_FAIL;
+	}
+
 	int hr;
-	struct target *target = bank->target;
 	struct mxs40_bank_info *info = bank->driver_priv;
 	bool is_data_in_ram = (req_and_params & SROMAPI_DATA_LOCATION_MSK) == 0;
 
@@ -420,12 +461,6 @@ int mxs40_call_sromapi(struct flash_bank *bank,
 	else
 		hr = target_write_u32(target, info->regs->ipc_data, req_and_params);
 
-	if (hr != ERROR_OK)
-		return hr;
-
-	/* Enable notification interrupt of IPC_INTR_STRUCT0(CM0+) for IPC_STRUCT2
-	 * This register is protected on secure devices */
-	hr = target_write_u32(target, info->regs->ipc_intr, 0x0Fu << 16);
 	if (hr != ERROR_OK)
 		return hr;
 
@@ -449,13 +484,28 @@ int mxs40_call_sromapi(struct flash_bank *bank,
 		return hr;
 	}
 
-	bool is_success = (*data_out & SROMAPI_STATUS_MSK) == SROMAPI_STAT_SUCCESS;
-	if (!is_success) {
+	bool is_error = (*data_out & SROMAPI_STATUS_MSK) != SROMAPI_STAT_SUCCESS;
+	if (check_errors && is_error) {
 		LOG_ERROR("SROM API execution failed. Status: 0x%08X", (uint32_t)*data_out);
 		return ERROR_TARGET_FAILURE;
 	}
 
 	return ERROR_OK;
+}
+
+/** ***********************************************************************************************
+ * @brief Invokes SROM API functions which are responsible for Flash operations
+ *
+ * @param bank current flash bank
+ * @param req_and_params requect id of the function to invoke
+ * @param working_area address of memory buffer in target's memory space for SROM API parameters
+ * @param data_out pointer to variable which will be populated with execution status
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
+int mxs40_call_sromapi(struct flash_bank *bank, uint32_t req_and_params,
+    uint32_t working_area, uint32_t *data_out)
+{
+    return mxs40_call_sromapi_inner(bank, req_and_params, working_area, true, data_out);
 }
 
 /** ***********************************************************************************************
@@ -484,7 +534,7 @@ bool mxs40_flash_bank_matches(struct flash_bank *bank, const uint32_t *addr_arra
  * @param op type of operation to check safety for
  * @return true if flash bank belongs to Safe Supervisory Flash region
  *************************************************************************************************/
-static bool mxs40_is_safe_sflash_page(uint32_t addr, enum operation op)
+static bool mxs40_is_safe_sflash_page(struct mxs40_bank_info *info, uint32_t addr, enum operation op)
 {
 	assert(addr % 512 == 0);
 
@@ -492,15 +542,15 @@ static bool mxs40_is_safe_sflash_page(uint32_t addr, enum operation op)
 	if (op == PROGRAM && g_sflash_restrictions == 3)
 		return true;
 
-	for (size_t i = 0; i < g_num_sflash_regions; i++) {
-		target_addr_t region_start = g_sflash_regions[i].addr;
-		uint32_t region_size = g_sflash_regions[i].size;
+	for (size_t i = 0; i < 4; i++) {
+		target_addr_t region_start = info->sflash_regions[i].addr;
+		uint32_t region_size = info->sflash_regions[i].size;
 
 		if (addr >= region_start && addr < region_start + region_size) {
 			if(op == ERASE) {
-				return (g_sflash_regions[i].restrictions & (1u << (g_sflash_restrictions + 0)));
+				return (info->sflash_regions[i].flags & (1u << (g_sflash_restrictions + 0)));
 			} else { /* op == PROGRAM */
-				return (g_sflash_regions[i].restrictions & (1u << (g_sflash_restrictions + 4)));
+				return (info->sflash_regions[i].flags & (1u << (g_sflash_restrictions + 4)));
 			}
 		}
 	}
@@ -629,7 +679,7 @@ int mxs40_protect_check(struct flash_bank *bank)
 			break;
 	}
 
-	for (int i = 0; i < bank->num_sectors; i++)
+	for (unsigned int i = 0; i < bank->num_sectors; i++)
 		bank->sectors[i].is_protected = is_protected;
 
 	return ERROR_OK;
@@ -639,7 +689,7 @@ int mxs40_protect_check(struct flash_bank *bank)
  * @brief Dummy function, device does not support flash bank protection
  * @return ERROR_OK always
  *************************************************************************************************/
-int mxs40_protect(struct flash_bank *bank, int set, int first, int last)
+int mxs40_protect(struct flash_bank *bank, int set, unsigned int first, unsigned int last)
 {
 	(void)bank; (void)set; (void)first; (void)last;
 
@@ -654,7 +704,7 @@ int mxs40_protect(struct flash_bank *bank, int set, int first, int last)
  * @param buf_size size of the buffer
  * @return ERROR_OK in case of success, ERROR_XXX code otherwise
  *************************************************************************************************/
-int mxs40_get_info(struct flash_bank *bank, char *buf, int buf_size)
+int mxs40_get_info(struct flash_bank *bank, struct command_invocation *cmd)
 {
 	struct mxs40_bank_info *info = bank->driver_priv;
 
@@ -669,7 +719,7 @@ int mxs40_get_info(struct flash_bank *bank, char *buf, int buf_size)
 	if (hr != ERROR_OK)
 		return hr;
 
-	snprintf(buf, buf_size, "Silicon ID: 0x%08X\nProtection: %s\n",
+	command_print_sameline(cmd, "Silicon ID: 0x%08X\nProtection: %s",
 		silicon_id, mxs40_protection_to_str(protection));
 
 	return ERROR_OK;
@@ -717,7 +767,7 @@ int mxs40_erase_sflash(struct flash_bank *bank, int first, int last)
 	progress_init(count / info->page_size, ERASING);
 	for (size_t i = 0; i < count / info->page_size; i++) {
 		const uint32_t row_addr = bank->base + offset + i * info->page_size;
-		if (mxs40_is_safe_sflash_page(row_addr, ERASE)) {
+		if (mxs40_is_safe_sflash_page(info, row_addr, ERASE)) {
 			hr = mxs40_program_row(bank, row_addr, buffer, is_sflash);
 			if (hr != ERROR_OK)
 				LOG_ERROR("Failed to program Flash at address 0x%08X", row_addr);
@@ -749,26 +799,170 @@ exit:
 int mxs40_erase_row(struct flash_bank *bank, uint32_t addr, bool erase_sector)
 {
 	struct target *target = bank->target;
-	struct mxs40_bank_info *info = bank->driver_priv;
 	struct working_area *wa;
 
 	LOG_DEBUG("MXS40 patform: eraseing row @%08X", addr);
+	uint8_t srom_params[2 * sizeof(uint32_t)];
 
-	int hr = target_alloc_working_area(target, info->page_size + 32, &wa);
+	int hr = target_alloc_working_area(target, sizeof(srom_params), &wa);
 	if (hr != ERROR_OK)
 		goto exit;
 
-	hr = target_write_u32(target, wa->address,
-			erase_sector ? SROMAPI_ERASESECTOR_REQ : SROMAPI_ERASEROW_REQ);
-	if (hr != ERROR_OK)
-		goto exit_free_wa;
+	buf_set_u32(srom_params + 0x00, 0, 32, erase_sector ? SROMAPI_ERASESECTOR_REQ : SROMAPI_ERASEROW_REQ);
+	buf_set_u32(srom_params + 0x04, 0, 32, addr);
 
-	hr = target_write_u32(target, wa->address + 0x04, addr);
+	hr = target_write_buffer(target, wa->address, sizeof(srom_params), srom_params);
 	if (hr != ERROR_OK)
 		goto exit_free_wa;
 
 	uint32_t data_out;
 	hr = mxs40_call_sromapi(bank, SROMAPI_ERASEROW_REQ, wa->address, &data_out);
+
+exit_free_wa:
+	target_free_working_area(target, wa);
+
+exit:
+	return hr;
+}
+
+/** ***********************************************************************************************
+ * @brief Performs Erase operation using asynchronous flash algorithm
+ * @param bank current flash bank
+ * @param first first sector to erase
+ * @param last last sector to erase
+ * @param erase_builder_p pointer to erase_builder function
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
+int mxs40_erase_with_algo(struct flash_bank *bank, int first, int last, erase_builder erase_builder_p)
+{
+	int hr;
+	struct target *target = bank->target;
+	struct mxs40_bank_info *info = bank->driver_priv;
+
+	const size_t algo_size = info->erase_algo_size;
+	const uint8_t *algo_p = info->erase_algo_p;
+
+	struct working_area *wa_algorithm;
+	struct working_area *wa_stack;
+	struct working_area *wa_buffer;
+
+	uint32_t address_buffer[last - first + 1];
+	memset(address_buffer, 0, sizeof(address_buffer));
+
+	if(info->prepare_function) {
+		hr = info->prepare_function(bank);
+		if (hr != ERROR_OK)
+			return hr;
+	}
+
+	/* Allocate buffer for the algorithm */
+	hr = target_alloc_working_area(target, algo_size, &wa_algorithm);
+	if (hr != ERROR_OK)
+		return hr;
+
+	/* Write the algorithm code */
+	hr = target_write_buffer(target, wa_algorithm->address, algo_size, algo_p);
+	if (hr != ERROR_OK)
+		goto err_free_wa_algo;
+
+	/* Allocate buffer for the stack */
+	hr = target_alloc_working_area(target, RAM_STACK_WA_SIZE, &wa_stack);
+	if (hr != ERROR_OK)
+		goto err_free_wa_algo;
+
+	/* Allocate circular buffer for 16 addresses, this should be sufficient */
+	hr = target_alloc_working_area(target, 16 * sizeof(uint32_t) + 8, &wa_buffer);
+	if(hr != ERROR_OK)
+		goto err_free_wa_stack;
+
+	size_t num_addresses_in_buffer = erase_builder_p(bank, first, last, address_buffer);
+	struct armv7m_algorithm armv7m_algo;
+	armv7m_algo.common_magic = ARMV7M_COMMON_MAGIC;
+	armv7m_algo.core_mode = ARM_MODE_THREAD;
+
+	struct reg_param reg_params[4];
+	init_reg_param(&reg_params[0], "r0", 32, PARAM_IN_OUT);
+	init_reg_param(&reg_params[1], "r1", 32, PARAM_OUT);
+	init_reg_param(&reg_params[2], "r2", 32, PARAM_OUT);
+	init_reg_param(&reg_params[3], "sp", 32, PARAM_OUT);
+
+	buf_set_u32(reg_params[0].value, 0, 32, wa_buffer->address);
+	buf_set_u32(reg_params[1].value, 0, 32, wa_buffer->address + wa_buffer->size);
+	buf_set_u32(reg_params[2].value, 0, 32, num_addresses_in_buffer);
+	buf_set_u32(reg_params[3].value, 0, 32, wa_stack->address + wa_stack->size);
+
+	progress_init(0, ERASING);
+	hr = target_run_flash_async_algorithm(target, (const uint8_t *)address_buffer, num_addresses_in_buffer,
+			sizeof(uint32_t), 0, NULL, ARRAY_SIZE(reg_params), reg_params,
+			wa_buffer->address, wa_buffer->size,
+			wa_algorithm->address, 0, &armv7m_algo);
+
+	if (hr != ERROR_OK) {
+		uint32_t srom_result = buf_get_u32(reg_params[0].value, 0, 32);
+		if ((srom_result & SROMAPI_STATUS_MSK) != SROMAPI_STAT_SUCCESS) {
+			LOG_ERROR("SROM API execution failed. Status: 0x%08X", srom_result);
+			hr = ERROR_FAIL;
+		}
+	}
+
+	destroy_reg_param(&reg_params[0]);
+	destroy_reg_param(&reg_params[1]);
+	destroy_reg_param(&reg_params[2]);
+	destroy_reg_param(&reg_params[3]);
+
+	target_free_working_area(target, wa_buffer);
+
+err_free_wa_stack:
+	target_free_working_area(target, wa_stack);
+
+err_free_wa_algo:
+	target_free_working_area(target, wa_algorithm);
+
+	return hr;
+}
+
+/** ***********************************************************************************************
+ * @brief Programs single Flash Row
+ * @param bank current flash bank
+ * @param addr address of the flash row
+ * @param buffer pointer to the buffer with data
+ * @param use_writerow true if current flash bank belongs to Supervisory Flash
+ * @param data_size - size of data to be programmed
+ *   0 – 1 byte     1 - 2 bytes    2 - 4 bytes     3 – 8 bytes     4 – 16 bytes
+ *   5 – 32 bytes   6 – 64 bytes   7 - 128 bytes   8 - 256 bytes   9 - 512 bytes
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
+int mxs40_program_row_inner(struct flash_bank *bank, uint32_t addr, const uint8_t *buffer,
+    bool use_writerow, uint8_t data_size)
+{
+	struct target *target = bank->target;
+	struct working_area *wa;
+	const uint32_t sromapi_req = use_writerow ? SROMAPI_WRITEROW_REQ : SROMAPI_PROGRAMROW_REQ;
+	const size_t num_bytes = (1u << data_size);
+	uint32_t data_out;
+	int hr;
+
+	LOG_DEBUG("MXS40 patform: programming row @%08X", addr);
+	uint8_t srom_params[4 * sizeof(uint32_t)];
+
+	hr = target_alloc_working_area(target, sizeof(srom_params) + num_bytes, &wa);
+	if (hr != ERROR_OK)
+		goto exit;
+
+	buf_set_u32(srom_params + 0x00, 0, 32, sromapi_req);
+	buf_set_u32(srom_params + 0x04, 0, 32, 0x100 | data_size);
+	buf_set_u32(srom_params + 0x08, 0, 32, addr);
+	buf_set_u32(srom_params + 0x0C, 0, 32, wa->address + 0x10);
+
+	hr = target_write_buffer(target, wa->address, sizeof(srom_params), srom_params);
+	if (hr != ERROR_OK)
+		goto exit_free_wa;
+
+	hr = target_write_buffer(target, wa->address + 0x10, num_bytes, buffer);
+	if (hr != ERROR_OK)
+		goto exit_free_wa;
+
+	hr = mxs40_call_sromapi(bank, sromapi_req, wa->address, &data_out);
 
 exit_free_wa:
 	target_free_working_area(target, wa);
@@ -785,49 +979,9 @@ exit:
  * @param use_writerow true if current flash bank belongs to Supervisory Flash
  * @return ERROR_OK in case of success, ERROR_XXX code otherwise
  *************************************************************************************************/
-int mxs40_program_row(struct flash_bank *bank, uint32_t addr, const uint8_t *buffer,
-	bool use_writerow)
+int mxs40_program_row(struct flash_bank *bank, uint32_t addr, const uint8_t *buffer, bool use_writerow)
 {
-	struct target *target = bank->target;
-	struct mxs40_bank_info *info = bank->driver_priv;
-	struct working_area *wa;
-	const uint32_t sromapi_req = use_writerow ? SROMAPI_WRITEROW_REQ : SROMAPI_PROGRAMROW_REQ;
-	uint32_t data_out;
-	int hr;
-
-	LOG_DEBUG("MXS40 patform: programming row @%08X", addr);
-
-	hr = target_alloc_working_area(target, info->page_size + 32, &wa);
-	if (hr != ERROR_OK)
-		goto exit;
-
-	hr = target_write_u32(target, wa->address, sromapi_req);
-	if (hr != ERROR_OK)
-		goto exit_free_wa;
-
-	hr = target_write_u32(target, wa->address + 0x04, 0x109);
-	if (hr != ERROR_OK)
-		goto exit_free_wa;
-
-	hr = target_write_u32(target, wa->address + 0x08, addr);
-	if (hr != ERROR_OK)
-		goto exit_free_wa;
-
-	hr = target_write_u32(target, wa->address + 0x0C, wa->address + 0x10);
-	if (hr != ERROR_OK)
-		goto exit_free_wa;
-
-	hr = target_write_buffer(target, wa->address + 0x10, info->page_size, buffer);
-	if (hr != ERROR_OK)
-		goto exit_free_wa;
-
-	hr = mxs40_call_sromapi(bank, sromapi_req, wa->address, &data_out);
-
-exit_free_wa:
-	target_free_working_area(target, wa);
-
-exit:
-	return hr;
+    return mxs40_program_row_inner(bank, addr, buffer, use_writerow, 9);
 }
 
 /** ***********************************************************************************************
@@ -863,7 +1017,7 @@ int mxs40_program(struct flash_bank *bank, const uint8_t *buffer, uint32_t offse
 	progress_init(count / info->page_size, PROGRAMMING);
 	for (size_t i = 0; i < count / info->page_size; i++) {
 		const uint32_t page_addr = bank->base + offset + i * info->page_size;
-		const bool is_safe_sflash_page = mxs40_is_safe_sflash_page(page_addr, PROGRAM);
+		const bool is_safe_sflash_page = mxs40_is_safe_sflash_page(info, page_addr, PROGRAM);
 
 		if (!is_sflash || is_safe_sflash_page) {
 			hr = mxs40_program_row(bank, page_addr, buffer, is_sflash);
@@ -912,6 +1066,12 @@ int mxs40_program_with_algo(struct flash_bank *bank, const uint8_t *buffer,
 	struct working_area *wa_stack;
 	struct working_area *wa_buffer;
 
+	if(info->prepare_function) {
+		hr = info->prepare_function(bank);
+		if (hr != ERROR_OK)
+			return hr;
+	}
+
 	/* Allocate buffer for the algorithm */
 	hr = target_alloc_working_area(target, algo_size, &wa_algorithm);
 	if (hr != ERROR_OK)
@@ -927,19 +1087,19 @@ int mxs40_program_with_algo(struct flash_bank *bank, const uint8_t *buffer,
 	if (hr != ERROR_OK)
 		goto err_free_wa_algo;
 
-	/* Try to allocate as large RAM Buffer as possible starting form 128 Page Buffers */
-	uint32_t buffer_size = 128 * info->page_size;
-
-	while (target_alloc_working_area_try(target, buffer_size + 8, &wa_buffer) != ERROR_OK) {
-		buffer_size -= info->page_size;
-		if (buffer_size <= 4 * info->page_size) {
-			LOG_WARNING("Failed to allocate Circular Buffer, falling back to DAP mode");
-			hr = ERROR_TARGET_RESOURCE_NOT_AVAILABLE;
-			goto err_free_wa_stack;
-		}
+	/* Try to allocate as large RAM Buffer as possible */
+	const uint32_t wa_avail = target_get_working_area_avail(target);
+	uint32_t num_rows = (wa_avail - 8) / info->page_size;
+	if (num_rows <= 4) {
+		LOG_WARNING("Failed to allocate Circular Buffer, falling back to DAP mode");
+		hr = ERROR_TARGET_RESOURCE_NOT_AVAILABLE;
+		goto err_free_wa_stack;
 	}
 
-	LOG_DEBUG("Allocated %u bytes for circular buffer", buffer_size);
+	hr = target_alloc_working_area(target, num_rows * info->page_size + 8, &wa_buffer);
+	assert(hr == ERROR_OK);
+
+	LOG_DEBUG("Allocated buffer for %d pages (%d bytes)", num_rows, num_rows * info->page_size);
 
 	struct armv7m_algorithm armv7m_algo;
 	armv7m_algo.common_magic = ARMV7M_COMMON_MAGIC;
@@ -959,7 +1119,7 @@ int mxs40_program_with_algo(struct flash_bank *bank, const uint8_t *buffer,
 	buf_set_u32(reg_params[4].value, 0, 32, wa_stack->address + wa_stack->size);
 
 	hr = target_run_flash_async_algorithm(target, buffer, count / info->page_size,
-			info->page_size, 0, NULL, 5, reg_params,
+			info->page_size, 0, NULL, ARRAY_SIZE(reg_params), reg_params,
 			wa_buffer->address, wa_buffer->size,
 			wa_algorithm->address, 0, &armv7m_algo);
 
@@ -988,6 +1148,35 @@ err_free_wa_algo:
 	return hr;
 }
 
+static bool mxs40_is_address_bootable(uint32_t variant, target_addr_t addr)
+{
+	switch (variant) {
+	case MXS40_VARIANT_PSOC6_BLE2:
+	case MXS40_VARIANT_PSOC6A_2M:
+		return  (addr >= 0x10000000 && addr < 0x10200000) || /* Main Flash, 2 MiB max */
+				(addr >= 0x08000000 && addr < 0x08100000) || /* RAM, 1 MiB max */
+				(addr >= 0x18000000 && addr < 0x20000000);   /* XIP, 128 MiB max */
+
+	case MXS40_VARIANT_MACAW:
+		return  (addr < 0x00008000) ||                       /* ROM, 32 KiB max */
+				(addr >= 0x08000000 && addr < 0x08002000);   /* RAM, 8 KiB max */
+
+	case MXS40_VARIANT_TRAVEO_II:
+		return  (addr >= 0x10000000 && addr < 0x10400000) || /* Main Flash, 4 MiB max */
+				(addr >= 0x08000000 && addr < 0x08080000) || /* RAM, 512 KiB max */
+				(addr >= 0x18000000 && addr < 0x20000000);   /* XIP, 128 MiB max */
+
+	case MXS40_VARIANT_TRAVEO_II_8M:
+		return  (addr >= 0x10000000 && addr < 0x10800000) || /* Main Flash, 8 MiB max */
+				(addr >= 0x28000000 && addr < 0x28100000) || /* RAM, 1 MiB max */
+				(addr >= 0x60000000 && addr < 0xA0000000);   /* SMIF0/1, 1 GiB max */
+
+	default:
+		LOG_WARNING("Unsupported MXS40 variant: %" PRIu32 ", reset_halt may fail" , variant);
+		return true;
+	}
+}
+
 /** ***********************************************************************************************
  * @brief Simulates broken Vector Catch
  * Function will try to determine entry point of user application. If it succeeds it will set HW
@@ -1002,19 +1191,6 @@ err_free_wa_algo:
  *************************************************************************************************/
 static int mxs40_reset_halt(struct target *target, enum reset_halt_mode mode)
 {
-	int hr;
-	uint32_t reset_addr;
-
-	if (target->state != TARGET_HALTED) {
-		hr = target_halt(target);
-		if (hr != ERROR_OK)
-			return hr;
-
-		target_wait_state(target, TARGET_HALTED, IPC_TIMEOUT_MS);
-		if (hr != ERROR_OK)
-			return hr;
-	}
-
 	const struct mxs40_bank_info *info = mxs40_get_bank_info_by_target(target);
 	if (info == NULL) {
 		LOG_ERROR("Unable to locate mxs40_bank_info structure for target %s",
@@ -1022,41 +1198,60 @@ static int mxs40_reset_halt(struct target *target, enum reset_halt_mode mode)
 		return ERROR_FAIL;
 	}
 
-	const struct mxs40_regs *regs = info->regs;
+	int hr;
+	const long timeout_ms = (target->coreid == 0) ? CM0_VTOR_TIMEOUT_MS : OTHER_VTOR_TIMEOUT_MS;
+	LOG_INFO("%s: Waiting up to %ld.%ld sec for valid Vector Table address...",
+			 target_name(target), timeout_ms / 1000u, timeout_ms % 1000u);
 
-	/* Read Vector Offset register */
 	uint32_t vt_base;
-	const uint32_t vt_offset_reg = regs->vtbase[target->coreid];
-	hr = target_read_u32(target, vt_offset_reg, &vt_base);
-	if (hr != ERROR_OK)
-		return ERROR_OK;
+	uint32_t reset_addr;
+	bool vt_found = false;
+	struct timeout to;
+	struct armv7m_common *armv7m =target_to_armv7m(target);
+	mxs40_timeout_init(&to, timeout_ms);
+	while (!mxs40_timeout_expired(&to)) {
+		keep_alive();
 
-	/* Invalid value means flash is empty */
-	vt_base &= 0xFFFFFF00;
-	if (vt_base < 0x10000000 || vt_base > 0x18000000) {
-		LOG_INFO("Vector Table address invalid (0x%08X), reset_halt skipped ", vt_base);
-		return ERROR_OK;
+		/* Read Vector Table Offset register */
+		hr = mem_ap_read_atomic_u32(armv7m->debug_ap, info->regs->vtbase[target->coreid], &vt_base);
+		if (hr != ERROR_OK)
+			continue;
+
+		if ((target->coreid == 0) && (vt_base & 0xFFFF0000) == 0xFFFF0000) {
+			LOG_INFO("%s: Application is invalid (VTOR = 0x%08X), reset_halt skipped",
+					 target_name(target), vt_base);
+			goto exit_halt_cpu;
+		}
+
+		/* Vector Table Offset must point to bootable region */
+		if (!mxs40_is_address_bootable(info->regs->variant, vt_base))
+			continue;
+
+		/* Read Reset_Handler address */
+		hr = mem_ap_read_atomic_u32(armv7m->debug_ap, vt_base + 4, &reset_addr);
+		if (hr != ERROR_OK)
+			continue;
+
+		/* Read Reset_Handler must belong to bootable region */
+		if (mxs40_is_address_bootable(info->regs->variant, reset_addr)) {
+			vt_found = true;
+			break;
+		}
 	}
 
-	/* Read Reset Vector value */
-	hr = target_read_u32(target, vt_base + 4, &reset_addr);
-	if (hr != ERROR_OK)
-		return hr;
-
-	/* Invalid value means flash is empty */
-	if (reset_addr == 0 || reset_addr == 0xFFFFFFFF) {
-		LOG_INFO("Entry Point address invalid (0x%08X), reset_halt skipped", reset_addr);
-		return ERROR_OK;
+	if (!vt_found) {
+		LOG_INFO("%s: Vector Table not found (core not started?), reset_halt skipped", target_name(target));
+		goto exit_halt_cpu;
 	}
+
+	LOG_INFO("%s: Vector Table found at 0x%08X", target_name(target), vt_base);
 
 	/* Set breakpoint at User Application entry point */
 	hr = breakpoint_add(target, reset_addr, 2, BKPT_HARD);
 	if (hr != ERROR_OK)
 		return hr;
 
-	const struct armv7m_common *cm = target_to_armv7m(target);
-
-	/* MXS40 patform reboots immediatelly after issuing SYSRESETREQ / VECTRESET
+	/* MXS40 platform reboots immediately after issuing SYSRESETREQ / VECTRESET
 	 * this disables SWD/JTAG pins momentarily and may break communication
 	 * Ignoring return value of mem_ap_write_atomic_u32 seems to be ok here */
 
@@ -1074,31 +1269,45 @@ static int mxs40_reset_halt(struct target *target, enum reset_halt_mode mode)
 	}
 
 	/* Reset the CM0 by asserting SYSRESETREQ. This will also reset CM4 */
-	LOG_INFO("%s: bkpt @0x%08X, issuing %s", target->cmd_name, reset_addr, mode_str);
-	mem_ap_write_atomic_u32(cm->debug_ap, NVIC_AIRCR,
-		AIRCR_VECTKEY | rst_mask);
+	LOG_INFO("%s: bkpt @0x%08X, issuing %s", target_name(target), reset_addr, mode_str);
 
-	dap_invalidate_cache(cm->debug_ap->dap);
+	/* Workaround for PT-2019, both cores enter LOCKUP state with slow JTAG clock
+	 * This happens probably because JTAG pins gets disconnected momentarily when
+	 * SYSRESETREQ bit is written causing invalid JTAG state when pins gets connected
+	 * back to the DAP by the boot code. */
+#if(0)
+	mem_ap_write_atomic_u32(armv7m->debug_ap, NVIC_AIRCR,
+		AIRCR_VECTKEY | rst_mask);
+#else
+	mem_ap_write_u32(armv7m->debug_ap, NVIC_AIRCR, AIRCR_VECTKEY | rst_mask);
+	struct adiv5_dap *dap = armv7m->debug_ap->dap;
+	if(dap->ops->sync) {
+		dap->ops->sync(dap);
+	} else {
+		/* SWD DAP does not support sync() method, use run() instead */
+		dap->ops->run(dap);
+	}
+#endif
+
+	jtag_sleep(jtag_get_nsrst_delay() * 1000u);
+
+	/* Target is now under RESET */
+	target->state = TARGET_RESET;
+
+	/* Register cache is now invalid */
 	register_cache_invalidate(target->reg_cache);
 
-	/* Target is now running, call appropriate callbacks */
-	target->state = TARGET_RUNNING;
-	target_call_event_callbacks(target, TARGET_EVENT_RESUMED);
-
-	const int dl_old = debug_level;
-	debug_level = -1;
-	alive_sleep(jtag_get_nsrst_delay());
-	struct timeout to;
+	/* Wait for debug interface to be ready */
 	mxs40_timeout_init(&to, IPC_TIMEOUT_MS);
 	while(!mxs40_timeout_expired(&to)) {
-		dap_dp_init(cm->debug_ap->dap);
-		hr = cortex_m_examine(target);
-		if(hr == ERROR_OK)
-			break;
-		alive_sleep(5);
+		if( dap_dp_init(armv7m->debug_ap->dap) != ERROR_OK ||
+			target_examine_one(target) != ERROR_OK         ||
+			target_poll(target) != ERROR_OK)
+			continue;
+		break;
 	}
-	debug_level = dl_old;
 
+	/* Finally wait for the target to halt on break point */
 	target_wait_state(target, TARGET_HALTED, IPC_TIMEOUT_MS);
 
 	/* Remove the break point */
@@ -1109,6 +1318,32 @@ static int mxs40_reset_halt(struct target *target, enum reset_halt_mode mode)
 		rtos_wipe(target);
 
 	return ERROR_OK;
+
+exit_halt_cpu:
+	hr = target_poll(target);
+	if(hr != ERROR_OK)
+		return hr;
+
+	/* Poll again if we came here right from Reset
+	 * or target_halt() will not skip writing C_HALT bit */
+	if(target->state == TARGET_RESET) {
+		hr = target_poll(target);
+		if(hr != ERROR_OK)
+			return hr;
+	}
+
+	/* Halt the target if it is running */
+	if(target->state == TARGET_RUNNING) {
+		hr = target_halt(target);
+		if(hr != ERROR_OK)
+			return hr;
+
+		hr = target_wait_state(target, TARGET_HALTED, IPC_TIMEOUT_MS);
+		if(hr != ERROR_OK)
+			return hr;
+	}
+
+	return hr;
 }
 
 /** ***********************************************************************************************
@@ -1176,45 +1411,12 @@ COMMAND_HANDLER(mxs40_handle_sflash_restrictions)
 	return ERROR_OK;
 }
 
-COMMAND_HANDLER(mxs40_handle_add_safe_sflash_region)
-{
-	if (CMD_ARGC != 3)
-		return ERROR_COMMAND_SYNTAX_ERROR;
-
-	target_addr_t addr;
-	uint32_t size;
-	uint32_t restrictions;
-
-	COMMAND_PARSE_ADDRESS(CMD_ARGV[0], addr);
-	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[1], size);
-	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[2], restrictions);
-
-	struct row_region *tmp;
-	tmp = realloc(g_sflash_regions, (g_num_sflash_regions + 1)*sizeof(struct row_region));
-	if (tmp == NULL)
-		return ERROR_FAIL;
-
-	g_sflash_regions = tmp;
-	g_sflash_regions[g_num_sflash_regions].addr = addr;
-	g_sflash_regions[g_num_sflash_regions].size = size;
-	g_sflash_regions[g_num_sflash_regions].restrictions = restrictions;
-
-	g_num_sflash_regions++;
-	return ERROR_OK;
-}
-
 /** ***********************************************************************************************
  * @brief Deallocates private driver structures
  * @param bank - the bank being destroyed
  *************************************************************************************************/
 void mxs40_free_driver_priv(struct flash_bank *bank)
 {
-	if(g_num_sflash_regions) {
-		free(g_sflash_regions);
-		g_sflash_regions = NULL;
-		g_num_sflash_regions = 0;
-	}
-
 	free(bank->driver_priv);
 	bank->driver_priv = NULL;
 }
@@ -1237,6 +1439,99 @@ COMMAND_HANDLER(mxs40_handle_set_region_size)
 	struct mxs40_bank_info *info = bank->driver_priv;
 	info->size_override = sectors;
 
+	return ERROR_OK;
+}
+
+static struct flash_bank *mxs40_get_any_bank(struct target *target)
+{
+	for(struct flash_bank *b = flash_bank_list(); b; b = b->next) {
+		if(b->target == target) {
+			b->driver->auto_probe(b);
+			return b;
+		}
+	}
+
+	LOG_ERROR("Unable to find ant flash bank for the target %s", target_name(target));
+	return NULL;
+}
+
+COMMAND_HANDLER(mxs40_handle_sromcall_prepare)
+{
+	if(g_sromcall_prepare_called) {
+		LOG_ERROR("SROM Call: prepare/release not in sequence");
+		return ERROR_FAIL;
+	}
+
+	g_sromcall_prepare_called = true;
+	struct flash_bank *bank = mxs40_get_any_bank(get_current_target(CMD_CTX));
+	if(!bank)
+		return ERROR_FAIL;
+
+	return mxs40_sromalgo_prepare(bank);
+}
+
+COMMAND_HANDLER(mxs40_handle_sromcall)
+{
+	if(!CMD_ARGC) {
+		LOG_ERROR("At least one argument required");
+		return ERROR_COMMAND_SYNTAX_ERROR;
+	}
+
+	uint32_t sromapi_params[CMD_ARGC];
+
+	for(size_t i = 0; i < CMD_ARGC; i++) {
+		COMMAND_PARSE_NUMBER(u32, CMD_ARGV[i], sromapi_params[i]);
+		if(i == 0 && (sromapi_params[i] & 0x01) && CMD_ARGC > 1) {
+			LOG_ERROR("Additional SROM API parameters can be passed via RAM buffer only, "
+					  "check bit #0 of your SROM API request.");
+			return ERROR_COMMAND_SYNTAX_ERROR;
+		}
+	}
+
+	struct target *target = get_current_target(CMD_CTX);
+	struct working_area *wa = NULL;
+
+	int hr;
+	bool data_in_ram = (sromapi_params[0] & SROMAPI_DATA_LOCATION_MSK) == 0;
+
+	if(data_in_ram) {
+		hr = target_alloc_working_area(target, CMD_ARGC * sizeof(uint32_t), &wa);
+		if (hr != ERROR_OK)
+			goto exit;
+
+		hr = target_write_buffer(target, wa->address, CMD_ARGC * sizeof(uint32_t), (uint8_t *)sromapi_params);
+		if(hr != ERROR_OK)
+			goto exit_free_wa;
+	}
+
+	struct flash_bank *bank = mxs40_get_any_bank(get_current_target(CMD_CTX));
+	if(!bank) {
+		hr = ERROR_FAIL;
+		goto exit_free_wa;
+	}
+
+	uint32_t data_out;
+	hr = mxs40_call_sromapi(bank, sromapi_params[0], wa ? wa->address : 0, &data_out);
+	if(hr == ERROR_OK && data_out != 0xA0000000)
+		command_print(CMD, "0x%08X", data_out);
+
+exit_free_wa:
+	if(data_in_ram)
+		target_free_working_area(target, wa);
+
+exit:
+	return hr;
+}
+
+COMMAND_HANDLER(mxs40_handle_sromcall_release)
+{
+	if(!g_sromcall_prepare_called) {
+		LOG_ERROR("SROM Call: prepare/release not in sequence");
+		return ERROR_FAIL;
+	}
+
+	mxs40_sromalgo_release(get_current_target(CMD_CTX));
+	g_sromcall_prepare_called = false;
 	return ERROR_OK;
 }
 
@@ -1264,18 +1559,65 @@ const struct command_registration mxs40_exec_command_handlers[] = {
 				"1:USER+TOC+KEY, 2:USER+TOC+KEY+NAR, 3:Whole region",
 	},
 	{
-		.name = "add_safe_sflash_region",
-		.handler = mxs40_handle_add_safe_sflash_region,
-		.mode = COMMAND_ANY,
-		.usage = "<address> <size> <restrictions>",
-		.help = "Defines safe SFlash ranges",
-	},
-	{
 		.name = "set_region_size",
 		.handler = mxs40_handle_set_region_size,
 		.mode = COMMAND_ANY,
 		.usage = "<region_name> <region_sectors>",
 		.help = "Sets sectors for specified region",
 	},
+	{
+		.name = "sromcall_prepare",
+		.handler = mxs40_handle_sromcall_prepare,
+		.mode = COMMAND_ANY,
+		.usage = "",
+		.help = "Prepares mxs40 driver for direct srom calls",
+	},
+	{
+		.name = "sromcall",
+		.handler = mxs40_handle_sromcall,
+		.mode = COMMAND_ANY,
+		.usage = "<call_id> [param1] [param2] ...",
+		.help = "Calls SROM API function <call_id> with arbitrary number of additional parameters",
+	},
+	{
+		.name = "sromcall_release",
+		.handler = mxs40_handle_sromcall_release,
+		.mode = COMMAND_ANY,
+		.usage = "",
+		.help = "Releases resources allocated by 'sromcall_prepare'",
+	},
 	COMMAND_REGISTRATION_DONE
 };
+
+const struct command_registration macaw_exec_command_handlers[] = {
+	{
+		.name = "reset_halt",
+		.handler = mxs40_handle_reset_halt,
+		.mode = COMMAND_EXEC,
+		.usage = "[mode (sysresetreq, vectreset), by default core-dependent reset is used]",
+		.help = "Tries to simulate broken Vector Catch",
+	},
+	{
+		.name = "sromcall_prepare",
+		.handler = mxs40_handle_sromcall_prepare,
+		.mode = COMMAND_ANY,
+		.usage = "",
+		.help = "Prepares mxs40 driver for direct srom calls",
+	},
+	{
+		.name = "sromcall",
+		.handler = mxs40_handle_sromcall,
+		.mode = COMMAND_ANY,
+		.usage = "<call_id> [param1] [param2] ...",
+		.help = "Calls SROM API function <call_id> with arbitrary number of additional parameters",
+	},
+	{
+		.name = "sromcall_release",
+		.handler = mxs40_handle_sromcall_release,
+		.mode = COMMAND_ANY,
+		.usage = "",
+		.help = "Releases resources allocated by 'sromcall_prepare'",
+	},
+	COMMAND_REGISTRATION_DONE
+};
+

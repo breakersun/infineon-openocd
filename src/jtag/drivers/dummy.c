@@ -1,19 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+
 /***************************************************************************
  *   Copyright (C) 2008 by Øyvind Harboe                                   *
  *   oyvind.harboe@zylin.com                                               *
- *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
- *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 2 of the License, or     *
- *   (at your option) any later version.                                   *
- *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
- *   GNU General Public License for more details.                          *
- *                                                                         *
- *   You should have received a copy of the GNU General Public License     *
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -91,7 +80,6 @@ static int dummy_led(int on)
 static struct bitbang_interface dummy_bitbang = {
 		.read = &dummy_read,
 		.write = &dummy_write,
-		.reset = &dummy_reset,
 		.blink = &dummy_led,
 	};
 
@@ -145,19 +133,22 @@ static const struct command_registration dummy_command_handlers[] = {
 /* The dummy driver is used to easily check the code path
  * where the target is unresponsive.
  */
-struct jtag_interface dummy_interface = {
-		.name = "dummy",
+static struct jtag_interface dummy_interface = {
+	.supported = DEBUG_CAP_TMS_SEQ,
+	.execute_queue = &bitbang_execute_queue,
+};
 
-		.supported = DEBUG_CAP_TMS_SEQ,
-		.commands = dummy_command_handlers,
-		.transports = jtag_only,
+struct adapter_driver dummy_adapter_driver = {
+	.name = "dummy",
+	.transports = jtag_only,
+	.commands = dummy_command_handlers,
 
-		.execute_queue = &bitbang_execute_queue,
+	.init = &dummy_init,
+	.quit = &dummy_quit,
+	.reset = &dummy_reset,
+	.speed = &dummy_speed,
+	.khz = &dummy_khz,
+	.speed_div = &dummy_speed_div,
 
-		.speed = &dummy_speed,
-		.khz = &dummy_khz,
-		.speed_div = &dummy_speed_div,
-
-		.init = &dummy_init,
-		.quit = &dummy_quit,
-	};
+	.jtag_ops = &dummy_interface,
+};

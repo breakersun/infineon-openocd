@@ -1,18 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+
 /*
  * Copyright (c) 2010 by David Brownell
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
-
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
-
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #ifdef HAVE_CONFIG_H
@@ -42,6 +31,7 @@
  */
 
 #include <helper/log.h>
+#include <helper/replacements.h>
 #include <transport/transport.h>
 
 extern struct command_context *global_cmd_ctx;
@@ -105,7 +95,7 @@ int allow_transports(struct command_context *ctx, const char * const *vector)
 	 * of one transport; C code should be definitive about what
 	 * can be used when all goes well.
 	 */
-	if (allowed_transports != NULL || session) {
+	if (allowed_transports || session) {
 		LOG_ERROR("Can't modify the set of allowed transports.");
 		return ERROR_FAIL;
 	}
@@ -122,16 +112,6 @@ int allow_transports(struct command_context *ctx, const char * const *vector)
 }
 
 /**
- * Used to verify corrrect adapter driver initialization.
- *
- * @returns true iff the adapter declared one or more transports.
- */
-bool transports_are_declared(void)
-{
-	return allowed_transports != NULL;
-}
-
-/**
  * Registers a transport.  There are general purpose transports
  * (such as JTAG), as well as relatively proprietary ones which are
  * specific to a given chip (or chip family).
@@ -139,7 +119,7 @@ bool transports_are_declared(void)
  * Code implementing a transport needs to register it before it can
  * be selected and then activated.  This is a dynamic process, so
  * that chips (and families) can define transports as needed (without
- * nneeding error-prone static tables).
+ * needing error-prone static tables).
  *
  * @param new_transport the transport being registered.  On a
  * successful return, this memory is owned by the transport framework.
@@ -206,7 +186,7 @@ COMMAND_HELPER(transport_list_parse, char ***vector)
 
 	/* our return vector must be NULL terminated */
 	argv = calloc(n + 1, sizeof(char *));
-	if (argv == NULL)
+	if (!argv)
 		return ERROR_FAIL;
 
 	for (unsigned i = 0; i < n; i++) {
@@ -258,10 +238,10 @@ COMMAND_HANDLER(handle_transport_list)
 	if (CMD_ARGC != 0)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
-	command_print(CMD_CTX, "The following transports are available:");
+	command_print(CMD, "The following transports are available:");
 
 	for (struct transport *t = transport_list; t; t = t->next)
-		command_print(CMD_CTX, "\t%s", t->name);
+		command_print(CMD, "\t%s", t->name);
 
 	return ERROR_OK;
 }
@@ -290,7 +270,6 @@ static int jim_transport_select(Jim_Interp *interp, int argc, Jim_Obj * const *a
 			}
 			Jim_SetResultString(interp, session->name, -1);
 			return JIM_OK;
-			break;
 		case 2:	/* assign */
 			if (session) {
 				if (!strcmp(session->name, argv[1]->bytes)) {
@@ -327,7 +306,6 @@ static int jim_transport_select(Jim_Interp *interp, int argc, Jim_Obj * const *a
 
 			LOG_ERROR("Debug adapter doesn't support '%s' transport", argv[1]->bytes);
 			return JIM_ERR;
-			break;
 		default:
 			Jim_WrongNumArgs(interp, 1, argv, "[too many parameters]");
 			return JIM_ERR;

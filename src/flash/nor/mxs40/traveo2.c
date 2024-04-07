@@ -1,8 +1,11 @@
 /***************************************************************************
  *                                                                         *
  *   Copyright (C) 2019 by Bohdan Tymkiv, Mykola Tuzyak                    *
- *   bohdan.tymkiv@cypress.com bohdan200@gmail.com                         *
- *   mykola.tyzyak@cypress.com                                             *
+ *   bohdan.tymkiv@infineon.com bohdan200@gmail.com                        *
+ *   mykola.tyzyak@infineon.com                                            *
+ *                                                                         *
+ *   Copyright (C) <2019-2021>                                             *
+ *     <Cypress Semiconductor Corporation (an Infineon company)>           *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -23,11 +26,6 @@
 #include "flash/nor/imp.h"
 #include "target/target.h"
 #include "target/cortex_m.h"
-#include "target/breakpoints.h"
-#include "target/target_type.h"
-#include "time_support.h"
-#include "target/algorithm.h"
-#include "target/image.h"
 #include "flash/progress.h"
 
 #define MEM_SFLASH_SIZE                32768u
@@ -62,66 +60,74 @@
 #define FAULT_MASK1_ENABLE_ECC_MASK (FAULT_MASK1_MAIN_C_ECC | FAULT_MASK1_MAIN_NC_ECC | \
 	FAULT_MASK1_WORK_C_ECC | FAULT_MASK1_WORK_NC_ECC)
 
-#define MEM_SPCIF3_GEOMETRY            0x4024F00Cu
 #define MEM_BASE_IPC2                  0x40220040u
 #define MEM_IPC2_INTR_MASK             0x40221008u
 #define MEM_VTBASE2_CM0                0x40201120u
 #define MEM_VTBASE2_CM4                0x40200200u
+#define MEM_VTBASE2_CM70               0x40200200u
+#define MEM_VTBASE2_CM71               0x40200600u
 #define MEM_IPC2_ACQUIRE               (MEM_BASE_IPC2 + 0x00u)
-#define MEM_IPC2_RELEASE               (MEM_BASE_IPC2 + 0x04u)
 #define MEM_IPC2_NOTIFY                (MEM_BASE_IPC2 + 0x08u)
 #define MEM_IPC2_DATA                  (MEM_BASE_IPC2 + 0x0Cu)
 #define MEM_IPC2_LOCK_STATUS           (MEM_BASE_IPC2 + 0x1Cu)
 
-/* Traveo-II registers */
+/* TRAVEO™II registers */
 const struct mxs40_regs traveo2_regs = {
 	.variant = MXS40_VARIANT_TRAVEO_II,
-	.spcif_geometry = MEM_SPCIF3_GEOMETRY,
 	.ipc_acquire = MEM_IPC2_ACQUIRE,
-	.ipc_release = MEM_IPC2_RELEASE,
 	.ipc_notify = MEM_IPC2_NOTIFY,
 	.ipc_data = MEM_IPC2_DATA,
 	.ipc_lock_stat = MEM_IPC2_LOCK_STATUS,
 	.ipc_intr = MEM_IPC2_INTR_MASK,
+	.ipc_intr_msk = IPC_INTR_MASK_2_CORE,
 	.vtbase = {MEM_VTBASE2_CM0, MEM_VTBASE2_CM4, 0, },
-	.mem_base_main = {0x10000000, 0,},
+	.mem_base_main = {0x10000000, // present on Si and PSVP
+					  0x101F8000, 0x103F0000, 0x10400000, // C2D-4M PSVP
+					  0x10200000, 0x10400000, // CE-4M PSVP
+					  0, // MARKER
+					 },
 	.mem_base_work = {0x14000000, 0,},
 	.mem_base_sflash = {0x17000000, 0,},
-	.mem_base_efuses = {0, 0,},
 };
 
 #define MEM_BASE_IPC3                  0x40220060u
 #define MEM_IPC3_ACQUIRE               (MEM_BASE_IPC3 + 0x00u)
-#define MEM_IPC3_RELEASE               (MEM_BASE_IPC3 + 0x04u)
 #define MEM_IPC3_NOTIFY                (MEM_BASE_IPC3 + 0x08u)
 #define MEM_IPC3_DATA                  (MEM_BASE_IPC3 + 0x0Cu)
 #define MEM_IPC3_LOCK_STATUS           (MEM_BASE_IPC3 + 0x1Cu)
 
-/* Traveo-II 8M registers */
+/* TRAVEO™II 8M registers */
 const struct mxs40_regs traveo2_8m_regs = {
 	.variant = MXS40_VARIANT_TRAVEO_II_8M,
-	.spcif_geometry = MEM_SPCIF3_GEOMETRY,
 	.ipc_acquire = MEM_IPC3_ACQUIRE,
-	.ipc_release = MEM_IPC3_RELEASE,
 	.ipc_notify = MEM_IPC3_NOTIFY,
 	.ipc_data = MEM_IPC3_DATA,
 	.ipc_lock_stat = MEM_IPC3_LOCK_STATUS,
 	.ipc_intr = MEM_IPC2_INTR_MASK,
-	.vtbase = {MEM_VTBASE2_CM0, MEM_VTBASE2_CM4, 0, },
+	.ipc_intr_msk = IPC_INTR_MASK_3_CORE,
+	.vtbase = {MEM_VTBASE2_CM0, MEM_VTBASE2_CM70, MEM_VTBASE2_CM71, },
 	.mem_base_main = {0x10000000, // present on Si and PSVP
 					  0x102f8000, 0x105F0000, 0x10610000, // 6M PSVP
 					  0x10400000, // 8M PSVP
 					  0 // MARKER
-					  },
+					 },
 	.mem_base_work = {0x14000000, 0,},
 	.mem_base_sflash = {0x17000000, 0,},
-	.mem_base_efuses = {0, 0,},
 };
 
 static bool g_ecc_enabled;
 
+// Define SFlash layout (USER, TOC2, NAR, KEY)
+// All regions must have '0xEE' attribute except NAR - '0xC0'
+static const struct sflash_region traveo2_safe_sflash_regions[4] = {
+	{0x17000800, 0x800, 0xEE},
+	{0x17001A00, 0x200, 0xC0},
+	{0x17006400, 0xC00, 0xEE},
+	{0x17007C00, 0x200, 0xEE},
+};
+
 /** ***********************************************************************************************
- * @brief Configures ECC error reporting on Traveo-II devices
+ * @brief Configures ECC error reporting on TRAVEO™II devices
  * @param target current target
  * @param enabled true if ECC error reporting should be enabled
  * @return ERROR_OK in case of success, ERROR_XXX code otherwise
@@ -192,7 +198,45 @@ static int traveo2_configure_ecc(struct target *target, bool enabled)
 }
 
 /** ***********************************************************************************************
- * @brief Performs Flash Read operation with ECC error reporting. This function is used in Traveo-II
+ * @brief Performs initial setup of the TRAVEO™II target
+ * @param bank The flash bank
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
+int traveo2_prepare(struct flash_bank *bank)
+{
+	int hr = target_write_u32(bank->target, 0x4024F400, 0x01);
+	if (hr != ERROR_OK)
+		return hr;
+
+	hr = target_write_u32(bank->target, 0x4024F500, 0x01);
+	if (hr != ERROR_OK)
+		return hr;
+
+	hr = target_write_u32(bank->target, 0xE000E280, 0x03);
+	if (hr != ERROR_OK)
+		return hr;
+
+	hr = target_write_u32(bank->target, 0xE000E100, 0x03);
+	if (hr != ERROR_OK)
+		return hr;
+
+	/* RAM0_CTL0.ECC_CHECK_DIS, bit 19 */
+	uint32_t ram0_ctl0;
+	hr = target_read_u32(bank->target, 0x40201300, &ram0_ctl0);
+	if (hr != ERROR_OK)
+		return hr;
+
+	ram0_ctl0 |= BIT(19);
+
+	hr = target_write_u32(bank->target, 0x40201300, ram0_ctl0);
+	if (hr != ERROR_OK)
+		return hr;
+
+	return hr;
+}
+
+/** ***********************************************************************************************
+ * @brief Performs Flash Read operation with ECC error reporting. This function is used in TRAVEO™II
  * devices only since PSoC6 does not support ECC.
  * @param bank The bank to read
  * @param buffer The data bytes read
@@ -249,6 +293,23 @@ static int traveo2_flash_read(struct flash_bank *bank, uint8_t *buffer, uint32_t
 }
 
 /** ***********************************************************************************************
+ * @brief builds data buffer with list of sectors addresses to erase
+ * @param bank current flash bank
+ * @param first first sector to erase
+ * @param last last sector to erase
+ * @param address_buffer pointer to the buffer
+ * @return number of addresses in the buffer
+ *************************************************************************************************/
+static size_t traveo2_erase_builder(struct flash_bank *bank, int first, int last, uint32_t *address_buffer)
+{
+	size_t sector_count = 0;
+	for(int i = first; i <= last; i++)
+		address_buffer[sector_count++] = (bank->base + bank->sectors[i].offset) | 1u;
+
+	return sector_count;
+}
+
+/** ***********************************************************************************************
  * @brief Performs Erase operation. Function will try to use biggest erase block possible to
  * speedup the operation.
  *
@@ -257,27 +318,26 @@ static int traveo2_flash_read(struct flash_bank *bank, uint8_t *buffer, uint32_t
  * @param last last sector to erase
  * @return ERROR_OK in case of success, ERROR_XXX code otherwise
  *************************************************************************************************/
-static int traveo2_erase(struct flash_bank *bank, int first, int last)
+static int traveo2_erase(struct flash_bank *bank, unsigned int first, unsigned int last)
 {
-	struct target *target = bank->target;
 	struct mxs40_bank_info *info = bank->driver_priv;
-	int hr;
-
-	hr = mxs40_traveo_setup(bank);
-	if (hr != ERROR_OK)
-		return hr;
 
 	if (mxs40_flash_bank_matches(bank, info->regs->mem_base_sflash, NULL)) {
 		mxs40_erase_sflash(bank, first, last);
 		return ERROR_OK;
 	}
 
-	hr = mxs40_sromalgo_prepare(bank);
+	if(bank->target->coreid != 0xFF)
+		return mxs40_erase_with_algo(bank, first, last, traveo2_erase_builder);
+
+	/* Fallback for SYS_AP */
+	struct target *target = bank->target;
+	int hr = mxs40_sromalgo_prepare(bank);
 	if (hr != ERROR_OK)
 		goto exit;
 
 	progress_init(last - first + 1, ERASING);
-	for (int i = first; i <= last; i++) {
+	for (unsigned int i = first; i <= last; i++) {
 		hr = mxs40_erase_row(bank, bank->base + bank->sectors[i].offset, true);
 		if (hr != ERROR_OK)
 			goto exit;
@@ -288,24 +348,6 @@ exit:
 	mxs40_sromalgo_release(target);
 	progress_done(hr);
 	return hr;
-}
-
-/** ***********************************************************************************************
- * @brief Performs Program operation
- * @param bank current flash bank
- * @param buffer pointer to the buffer with data
- * @param offset starting offset in falsh bank
- * @param count number of bytes in buffer
- * @return ERROR_OK in case of success, ERROR_XXX code otherwise
- *************************************************************************************************/
-static int traveo2_program(struct flash_bank *bank, const uint8_t *buffer, uint32_t offset,
-	uint32_t count)
-{
-	int hr = mxs40_traveo_setup(bank);
-	if (hr != ERROR_OK)
-		return hr;
-
-	return mxs40_program(bank, buffer, offset, count);
 }
 
 /** *************************************************************************************
@@ -340,7 +382,7 @@ error:
 /** ***********************************************************************************************
  * @brief Probes the device and populates related data structures with target flash geometry data.
  * This is done in non-intrusive way, no SROM API calls are involved so GDB can safely attach to a
- * running target. This is for Traveo-II devices only.
+ * running target. This is for TRAVEO™II devices only.
  *
  * @param bank current flash bank
  * @param geometry value in FLASHC.GEONETRY register
@@ -420,7 +462,7 @@ static int traveo2_probe(struct flash_bank *bank)
 
 	bank->write_start_alignment = info->page_size;
 	bank->write_end_alignment = info->page_size;
-	bank->minimal_write_gap = info->page_size;
+	bank->minimal_write_gap = FLASH_WRITE_GAP_SECTOR;
 
 	bank->num_sectors = large_sec_num + small_sec_num;
 	bank->sectors = calloc(bank->num_sectors, sizeof(struct flash_sector));
@@ -444,27 +486,40 @@ static int traveo2_probe(struct flash_bank *bank)
 	return 0;
 }
 
-FLASH_BANK_COMMAND_HANDLER(traveo2_flash_bank_command)
+static void traveo2_flash_bank_command_inner(struct flash_bank *bank)
 {
-	if (CMD_ARGC < 6)
-		return ERROR_COMMAND_SYNTAX_ERROR;
-
 	static const uint8_t traveo2_program_algo[] = {
 		#include "../../../../contrib/loaders/flash/psoc6/tv2_write.inc"
 	};
 
+	static const uint8_t traveo2_erase_algo[] = {
+		#include "../../../../contrib/loaders/flash/psoc6/tv2_erase.inc"
+	};
+
 	struct mxs40_bank_info *info = calloc(1, sizeof(struct mxs40_bank_info));
-	info->is_probed = false;
 	info->program_algo_p = traveo2_program_algo;
 	info->program_algo_size = sizeof(traveo2_program_algo);
-	info->regs = &traveo2_regs;
+	info->erase_algo_p = traveo2_erase_algo;
+	info->erase_algo_size = sizeof(traveo2_erase_algo);
 	info->size_override = bank->size;
+	info->prepare_function = traveo2_prepare;
+	info->sflash_regions = traveo2_safe_sflash_regions;
 
 	/* Bank Size has special encoding in TVII (number of large and small sectors)
 	 * nullify value in bank->size to not confuse the user. Size will be populated
 	 * during first probing */
 	bank->size = 0;
 	bank->driver_priv = info;
+}
+
+FLASH_BANK_COMMAND_HANDLER(traveo2_flash_bank_command)
+{
+	if (CMD_ARGC < 6)
+		return ERROR_COMMAND_SYNTAX_ERROR;
+
+	traveo2_flash_bank_command_inner(bank);
+	struct mxs40_bank_info *info = bank->driver_priv;
+	info->regs = &traveo2_regs;
 
 	return ERROR_OK;
 }
@@ -474,22 +529,9 @@ FLASH_BANK_COMMAND_HANDLER(traveo2_8m_flash_bank_command)
 	if (CMD_ARGC < 6)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
-	static const uint8_t traveo2_program_algo[] = {
-		#include "../../../../contrib/loaders/flash/psoc6/tv2_write.inc"
-	};
-
-	struct mxs40_bank_info *info = calloc(1, sizeof(struct mxs40_bank_info));
-	info->is_probed = false;
-	info->program_algo_p = traveo2_program_algo;
-	info->program_algo_size = sizeof(traveo2_program_algo);
+	traveo2_flash_bank_command_inner(bank);
+	struct mxs40_bank_info *info = bank->driver_priv;
 	info->regs = &traveo2_8m_regs;
-	info->size_override = bank->size;
-
-	/* Bank Size has special encoding in TVII (number of large and small sectors)
-	 * nullify value in bank->size to not confuse the user. Size will be populated
-	 * during first probing */
-	bank->size = 0;
-	bank->driver_priv = info;
 
 	return ERROR_OK;
 }
@@ -509,6 +551,7 @@ COMMAND_HANDLER(traveo2_handle_ecc_error_reporting_command)
 	return hr;
 }
 
+extern const struct command_registration tv2_wflash_command_handlers[];
 static const struct command_registration tv2_exec_command_handlers[] = {
 	{
 		.name = "ecc_error_reporting",
@@ -516,6 +559,13 @@ static const struct command_registration tv2_exec_command_handlers[] = {
 		.mode = COMMAND_EXEC,
 		.usage = "on|off",
 		.help = "Controls ECC error reporting",
+	},
+	{
+		.name = "wflash",
+		.mode = COMMAND_EXEC,
+		.usage = "",
+		.help = "wflash command group",
+		.chain = tv2_wflash_command_handlers,
 	},
 	{
 		.chain = mxs40_exec_command_handlers,
@@ -534,13 +584,24 @@ static const struct command_registration traveo2_command_handlers[] = {
 	COMMAND_REGISTRATION_DONE
 };
 
+static const struct command_registration cat1c_command_handlers[] = {
+	{
+		.name = "cat1c",
+		.mode = COMMAND_ANY,
+		.help = "cat1c flash command group",
+		.usage = "",
+		.chain = tv2_exec_command_handlers,
+	},
+	COMMAND_REGISTRATION_DONE
+};
+
 struct flash_driver traveo21_flash = {
 	.name = "traveo21",
 	.commands = traveo2_command_handlers,
 	.flash_bank_command = traveo2_flash_bank_command,
 	.erase = traveo2_erase,
 	.protect = mxs40_protect,
-	.write = traveo2_program,
+	.write = mxs40_program,
 	.read = traveo2_flash_read,
 	.probe = traveo2_probe,
 	.auto_probe = mxs40_auto_probe,
@@ -556,7 +617,23 @@ struct flash_driver traveo22_flash = {
 	.flash_bank_command = traveo2_8m_flash_bank_command,
 	.erase = traveo2_erase,
 	.protect = mxs40_protect,
-	.write = traveo2_program,
+	.write = mxs40_program,
+	.read = traveo2_flash_read,
+	.probe = traveo2_probe,
+	.auto_probe = mxs40_auto_probe,
+	.erase_check = default_flash_blank_check,
+	.protect_check = mxs40_protect_check,
+	.info = mxs40_get_info,
+	.free_driver_priv = mxs40_free_driver_priv,
+};
+
+struct flash_driver cat1c_flash = {
+	.name = "cat1c",
+	.commands = cat1c_command_handlers,
+	.flash_bank_command = traveo2_8m_flash_bank_command,
+	.erase = traveo2_erase,
+	.protect = mxs40_protect,
+	.write = mxs40_program,
 	.read = traveo2_flash_read,
 	.probe = traveo2_probe,
 	.auto_probe = mxs40_auto_probe,

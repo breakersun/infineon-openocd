@@ -49,10 +49,16 @@ class OpenOcd:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     def __enter__(self):
-        self.sock.connect((self.tclRpcIp, self.tclRpcPort))
+        self.connect()
         return self
 
     def __exit__(self, type, value, traceback):
+        self.disconnect()
+
+    def connect(self):
+        self.sock.connect((self.tclRpcIp, self.tclRpcPort))
+
+    def disconnect(self):
         try:
             self.send("exit")
         finally:
@@ -85,28 +91,20 @@ class OpenOcd:
         return data
 
     def readVariable(self, address):
-        raw = self.send("ocd_mdw 0x%x" % address).split(": ")
+        raw = self.send("mdw 0x%x" % address).split(": ")
         return None if (len(raw) < 2) else strToHex(raw[1])
 
     def readMemory(self, wordLen, address, n):
-        self.send("array unset output") # better to clear the array before
-        self.send("mem2array output %d 0x%x %d" % (wordLen, address, n))
-
-        output = [*map(int, self.send("ocd_echo $output").split(" "))]
-        d = dict([tuple(output[i:i + 2]) for i in range(0, len(output), 2)])
-
-        return [d[k] for k in sorted(d.keys())]
+        output = self.send("read_memory 0x%x %d %d" % (address, wordLen, n))
+        return [*map(lambda x: int(x, 16), output.split(" "))]
 
     def writeVariable(self, address, value):
         assert value is not None
         self.send("mww 0x%x 0x%x" % (address, value))
 
-    def writeMemory(self, wordLen, address, n, data):
-        array = " ".join(["%d 0x%x" % (a, b) for a, b in enumerate(data)])
-
-        self.send("array unset 1986ве1т") # better to clear the array before
-        self.send("array set 1986ве1т { %s }" % array)
-        self.send("array2mem 1986ве1т 0x%x %s %d" % (wordLen, address, n))
+    def writeMemory(self, wordLen, address, data):
+        data = "{" + ' '.join(['0x%x' % x for x in data]) + "}"
+        self.send("write_memory 0x%x %d %s" % (address, wordLen, data))
 
 if __name__ == "__main__":
 
@@ -116,10 +114,10 @@ if __name__ == "__main__":
     with OpenOcd() as ocd:
         ocd.send("reset")
 
-        show(ocd.send("ocd_echo \"echo says hi!\"")[:-1])
-        show(ocd.send("capture \"ocd_halt\"")[:-1])
+        show(ocd.send("capture { echo \"echo says hi!\" }")[:-1])
+        show(ocd.send("capture \"halt\"")[:-1])
 
-        # Read the first few words at the RAM region (put starting adress of RAM
+        # Read the first few words at the RAM region (put starting address of RAM
         # region into 'addr')
         addr = 0x10000000
 

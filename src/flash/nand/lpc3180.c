@@ -1,22 +1,11 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+
 /***************************************************************************
  *   Copyright (C) 2007 by Dominic Rath                                    *
  *   Dominic.Rath@gmx.de                                                   *
  *
  *   Copyright (C) 2010 richard vegh <vegh.ricsi@gmail.com>                *
  *   Copyright (C) 2010 Oyvind Harboe <oyvind.harboe@zylin.com>            *
- *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
- *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 2 of the License, or     *
- *   (at your option) any later version.                                   *
- *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
- *   GNU General Public License for more details.                          *
- *                                                                         *
- *   You should have received a copy of the GNU General Public License     *
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -139,9 +128,9 @@ static int lpc3180_init(struct nand_device *nand)
 {
 	struct lpc3180_nand_controller *lpc3180_info = nand->controller_priv;
 	struct target *target = nand->target;
-	int bus_width = nand->bus_width ? : 8;
-	int address_cycles = nand->address_cycles ? : 3;
-	int page_size = nand->page_size ? : 512;
+	int bus_width = nand->bus_width ? nand->bus_width : 8;
+	int address_cycles = nand->address_cycles ? nand->address_cycles : 3;
+	int page_size = nand->page_size ? nand->page_size : 512;
 
 	if (target->state != TARGET_HALTED) {
 		LOG_ERROR("target must be halted to use LPC3180 NAND flash controller");
@@ -232,12 +221,12 @@ static int lpc3180_init(struct nand_device *nand)
 		/* FLASHCLK_CTRL = 0x05 (enable clock for SLC flash controller) */
 		target_write_u32(target, 0x400040c8, 0x05);
 
-		/* after reset set other registers of SLC so reset calling is here at the begining*/
+		/* after reset set other registers of SLC so reset calling is here at the beginning */
 		lpc3180_reset(nand);
 
 		/* SLC_CFG = 0x (Force nCE assert, DMA ECC enabled, ECC enabled, DMA burst enabled,
 		 *DMA read from SLC, WIDTH = bus_width) */
-		target_write_u32(target, 0x20020014, 0x3e | (bus_width == 16) ? 1 : 0);
+		target_write_u32(target, 0x20020014, 0x3e | ((bus_width == 16) ? 1 : 0));
 
 		/* SLC_IEN = 3 (INT_RDY_EN = 1) ,(INT_TC_STAT = 1) */
 		target_write_u32(target, 0x20020020, 0x03);
@@ -589,7 +578,7 @@ static int lpc3180_write_page(struct nand_device *nand,
 					oob_size);
 			}
 			retval = nand_page_command(nand, page, NAND_CMD_SEQIN, !data);
-			if (ERROR_OK != retval)
+			if (retval != ERROR_OK)
 				return retval;
 
 			/* allocate a working area */
@@ -970,7 +959,7 @@ static int lpc3180_read_page(struct nand_device *nand,
 			/* read always the data and also oob areas*/
 
 			retval = nand_page_command(nand, page, NAND_CMD_READ0, 0);
-			if (ERROR_OK != retval)
+			if (retval != ERROR_OK)
 				return retval;
 
 			/* allocate a working area */
@@ -1290,7 +1279,7 @@ COMMAND_HANDLER(handle_lpc3180_select_command)
 	COMMAND_PARSE_NUMBER(uint, CMD_ARGV[0], num);
 	struct nand_device *nand = get_nand_device_by_num(num);
 	if (!nand) {
-		command_print(CMD_CTX, "nand device '#%s' is out of bounds", CMD_ARGV[0]);
+		command_print(CMD, "nand device '#%s' is out of bounds", CMD_ARGV[0]);
 		return ERROR_OK;
 	}
 
@@ -1310,10 +1299,10 @@ COMMAND_HANDLER(handle_lpc3180_select_command)
 	}
 
 	if (lpc3180_info->selected_controller == LPC3180_MLC_CONTROLLER)
-		command_print(CMD_CTX, "%s controller selected",
+		command_print(CMD, "%s controller selected",
 			selected[lpc3180_info->selected_controller]);
 	else
-		command_print(CMD_CTX,
+		command_print(CMD,
 			lpc3180_info->is_bulk ? "%s controller selected bulk mode is available" :
 			"%s controller selected bulk mode is not available",
 			selected[lpc3180_info->selected_controller]);

@@ -1,26 +1,16 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+
 /***************************************************************************
  *   Copyright (C) 2011 by Broadcom Corporation                            *
  *   Evan Hunter - ehunter@broadcom.com                                    *
- *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
- *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 2 of the License, or     *
- *   (at your option) any later version.                                   *
- *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
- *   GNU General Public License for more details.                          *
- *                                                                         *
- *   You should have received a copy of the GNU General Public License     *
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifndef OPENOCD_RTOS_RTOS_H
 #define OPENOCD_RTOS_RTOS_H
 
 #include "server/server.h"
-#include <jim-nvp.h>
+#include "target/target.h"
+#include <helper/jim-nvp.h>
 
 typedef int64_t threadid_t;
 typedef int64_t symbol_address_t;
@@ -30,11 +20,11 @@ struct reg;
 /**
  * Table should be terminated by an element with NULL in symbol_name
  */
-typedef struct symbol_table_elem_struct {
+struct symbol_table_elem {
 	const char *symbol_name;
 	symbol_address_t address;
 	bool optional;
-} symbol_table_elem_t;
+};
 
 struct thread_detail {
 	threadid_t threadid;
@@ -46,10 +36,12 @@ struct thread_detail {
 struct rtos {
 	const struct rtos_type *type;
 
-	symbol_table_elem_t *symbols;
+	struct symbol_table_elem *symbols;
 	struct target *target;
 	/*  add a context variable instead of global variable */
+	/* The thread currently selected by gdb. */
 	int64_t current_threadid;
+	/* The currently selected thread according to the target. */
 	threadid_t current_thread;
 	struct thread_detail *thread_details;
 	int thread_count;
@@ -61,7 +53,7 @@ struct rtos {
 struct rtos_reg {
 	uint32_t number;
 	uint32_t size;
-	uint8_t value[8];
+	uint8_t value[16];
 };
 
 struct rtos_type {
@@ -70,12 +62,23 @@ struct rtos_type {
 	int (*create)(struct target *target);
 	int (*smp_init)(struct target *target);
 	int (*update_threads)(struct rtos *rtos);
+	/** Return a list of general registers, with their values filled out. */
 	int (*get_thread_reg_list)(struct rtos *rtos, int64_t thread_id,
 			struct rtos_reg **reg_list, int *num_regs);
-	int (*get_symbol_list_to_lookup)(symbol_table_elem_t *symbol_list[]);
+	int (*get_thread_reg)(struct rtos *rtos, int64_t thread_id,
+			uint32_t reg_num, struct rtos_reg *reg);
+	int (*get_symbol_list_to_lookup)(struct symbol_table_elem *symbol_list[]);
 	int (*clean)(struct target *target);
 	char * (*ps_command)(struct target *target);
+	int (*set_reg)(struct rtos *rtos, uint32_t reg_num, uint8_t *reg_value);
 	int (*wipe)(struct target *target);
+	/* Implement these if different threads in the RTOS can see memory
+	 * differently (for instance because address translation might be different
+	 * for each thread). */
+	int (*read_buffer)(struct rtos *rtos, target_addr_t address, uint32_t size,
+			uint8_t *buffer);
+	int (*write_buffer)(struct rtos *rtos, target_addr_t address, uint32_t size,
+			const uint8_t *buffer);
 };
 
 struct stack_register_offset {
@@ -95,23 +98,25 @@ struct rtos_register_stacking {
 	 * just use stacking->stack_registers_size * stack_growth_direction
 	 * to calculate adjustment.
 	 */
-	int64_t (*calculate_process_stack)(struct target *target,
+	target_addr_t (*calculate_process_stack)(struct target *target,
 		const uint8_t *stack_data,
 		const struct rtos_register_stacking *stacking,
-		int64_t stack_ptr);
+		target_addr_t stack_ptr);
 	const struct stack_register_offset *register_offsets;
 };
 
 #define GDB_THREAD_PACKET_NOT_CONSUMED (-40)
 
-int rtos_create(Jim_GetOptInfo *goi, struct target *target);
+int rtos_create(struct jim_getopt_info *goi, struct target *target);
 void rtos_cleanup(struct target *target);
+void rtos_destroy(struct target *target);
+int rtos_set_reg(struct connection *connection, int reg_num,
+		uint8_t *reg_value);
 int rtos_generic_stack_read(struct target *target,
 		const struct rtos_register_stacking *stacking,
 		int64_t stack_ptr,
 		struct rtos_reg **reg_list,
 		int *num_regs);
-int rtos_try_next(struct target *target);
 int gdb_thread_packet(struct connection *connection, char const *packet, int packet_size);
 int rtos_get_gdb_reg(struct connection *connection, int reg_num);
 int rtos_get_gdb_reg_list(struct connection *connection);
@@ -122,4 +127,9 @@ int rtos_smp_init(struct target *target);
 int rtos_qsymbol(struct connection *connection, char const *packet, int packet_size);
 int rtos_wipe(struct target *target);
 int rtos_register_commands(struct command_context *cmd_ctx);
+int rtos_read_buffer(struct target *target, target_addr_t address,
+		uint32_t size, uint8_t *buffer);
+int rtos_write_buffer(struct target *target, target_addr_t address,
+		uint32_t size, const uint8_t *buffer);
+
 #endif /* OPENOCD_RTOS_RTOS_H */

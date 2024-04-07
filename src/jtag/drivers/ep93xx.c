@@ -1,19 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+
 /***************************************************************************
  *   Copyright (C) 2005 by Dominic Rath                                    *
  *   Dominic.Rath@gmx.de                                                   *
- *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
- *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 2 of the License, or     *
- *   (at your option) any later version.                                   *
- *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
- *   GNU General Public License for more details.                          *
- *                                                                         *
- *   You should have received a copy of the GNU General Public License     *
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -50,20 +39,25 @@ static int ep93xx_quit(void);
 
 struct timespec ep93xx_zzzz;
 
-struct jtag_interface ep93xx_interface = {
-	.name = "ep93xx",
-
+static struct jtag_interface ep93xx_interface = {
 	.supported = DEBUG_CAP_TMS_SEQ,
 	.execute_queue = bitbang_execute_queue,
+};
+
+struct adapter_driver ep93xx_adapter_driver = {
+	.name = "ep93xx",
+	.transports = jtag_only,
 
 	.init = ep93xx_init,
 	.quit = ep93xx_quit,
+	.reset = ep93xx_reset,
+
+	.jtag_ops = &ep93xx_interface,
 };
 
 static struct bitbang_interface ep93xx_bitbang = {
 	.read = ep93xx_read,
 	.write = ep93xx_write,
-	.reset = ep93xx_reset,
 	.blink = 0,
 };
 
@@ -122,7 +116,7 @@ static int set_gonk_mode(void)
 	syscon = mmap(NULL, 4096, PROT_READ | PROT_WRITE,
 			MAP_SHARED, dev_mem_fd, 0x80930000);
 	if (syscon == MAP_FAILED) {
-		perror("mmap");
+		LOG_ERROR("mmap: %s", strerror(errno));
 		return ERROR_JTAG_INIT_FAILED;
 	}
 
@@ -146,14 +140,14 @@ static int ep93xx_init(void)
 
 	dev_mem_fd = open("/dev/mem", O_RDWR | O_SYNC);
 	if (dev_mem_fd < 0) {
-		perror("open");
+		LOG_ERROR("open: %s", strerror(errno));
 		return ERROR_JTAG_INIT_FAILED;
 	}
 
 	gpio_controller = mmap(NULL, 4096, PROT_READ | PROT_WRITE,
 				MAP_SHARED, dev_mem_fd, 0x80840000);
 	if (gpio_controller == MAP_FAILED) {
-		perror("mmap");
+		LOG_ERROR("mmap: %s", strerror(errno));
 		close(dev_mem_fd);
 		return ERROR_JTAG_INIT_FAILED;
 	}

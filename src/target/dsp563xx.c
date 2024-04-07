@@ -1,19 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+
 /***************************************************************************
  *   Copyright (C) 2009-2011 by Mathias Kuester                            *
  *   mkdorg@users.sourceforge.net                                          *
- *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
- *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 2 of the License, or     *
- *   (at your option) any later version.                                   *
- *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
- *   GNU General Public License for more details.                          *
- *                                                                         *
- *   You should have received a copy of the GNU General Public License     *
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -96,10 +85,10 @@
 /*
  * OBCR Register bit definitions
  */
-#define OBCR_b0_and_b1            ((0x0) << 10)
-#define OBCR_b0_or_b1             ((0x1) << 10)
-#define OBCR_b1_after_b0          ((0x2) << 10)
-#define OBCR_b0_after_b1          ((0x3) << 10)
+#define OBCR_B0_AND_B1            ((0x0) << 10)
+#define OBCR_B0_OR_B1             ((0x1) << 10)
+#define OBCR_B1_AFTER_B0          ((0x2) << 10)
+#define OBCR_B0_AFTER_B1          ((0x3) << 10)
 
 #define OBCR_BP_DISABLED          (0x0)
 #define OBCR_BP_MEM_P             (0x1)
@@ -322,7 +311,7 @@ enum watchpoint_condition {
 #define INSTR_JUMP      0x0AF080
 /* Effective Addressing Mode Encoding */
 #define EAME_R0         0x10
-/* instrcution encoder */
+/* instruction encoder */
 /* movep
  * s - peripheral space X/Y (X=0,Y=1)
  * w - write/read
@@ -475,6 +464,7 @@ static void dsp563xx_build_reg_cache(struct target *target)
 		reg_list[i].value = calloc(1, 4);
 		reg_list[i].dirty = false;
 		reg_list[i].valid = false;
+		reg_list[i].exist = true;
 		reg_list[i].type = &dsp563xx_reg_type;
 		reg_list[i].arch_info = &arch_info[i];
 	}
@@ -912,7 +902,7 @@ static int dsp563xx_init_target(struct command_context *cmd_ctx, struct target *
 	dsp563xx_build_reg_cache(target);
 	struct dsp563xx_common *dsp563xx = target_to_dsp563xx(target);
 
-	dsp563xx->hardware_breakpoints_cleared = 0;
+	dsp563xx->hardware_breakpoints_cleared = false;
 	dsp563xx->hardware_breakpoint[0].used = BPU_NONE;
 
 	return ERROR_OK;
@@ -936,7 +926,7 @@ static int dsp563xx_examine(struct target *target)
 		if (((chip>>5)&0x1f) == 0)
 			chip += 300;
 
-		LOG_INFO("DSP56%03" PRId32 " device found", chip);
+		LOG_INFO("DSP56%03" PRIu32 " device found", chip);
 
 		/* Clear all breakpoints */
 		dsp563xx_once_reg_write(target->tap, 1, DSP563XX_ONCE_OBCR, 0);
@@ -1084,9 +1074,18 @@ static int dsp563xx_poll(struct target *target)
 
 	if (!dsp563xx->hardware_breakpoints_cleared) {
 		err = dsp563xx_once_reg_write(target->tap, 1, DSP563XX_ONCE_OBCR, 0);
+		if (err != ERROR_OK)
+			return err;
+
 		err = dsp563xx_once_reg_write(target->tap, 1, DSP563XX_ONCE_OMLR0, 0);
+		if (err != ERROR_OK)
+			return err;
+
 		err = dsp563xx_once_reg_write(target->tap, 1, DSP563XX_ONCE_OMLR1, 0);
-		dsp563xx->hardware_breakpoints_cleared = 1;
+		if (err != ERROR_OK)
+			return err;
+
+		dsp563xx->hardware_breakpoints_cleared = true;
 	}
 
 	return ERROR_OK;
@@ -1358,7 +1357,7 @@ static int dsp563xx_deassert_reset(struct target *target)
 		if (target->state == TARGET_HALTED) {
 			/* after a reset the cpu jmp to the
 			 * reset vector and need 2 cycles to fill
-			 * the cache (fetch,decode,excecute)
+			 * the cache (fetch,decode,execute)
 			 */
 			err = dsp563xx_step_ex(target, 1, 0, 1, 1);
 			if (err != ERROR_OK)
@@ -1401,7 +1400,7 @@ static int dsp563xx_run_algorithm(struct target *target,
 
 		struct reg *reg = register_get_by_name(dsp563xx->core_cache,
 				reg_params[i].reg_name,
-				0);
+				false);
 
 		if (!reg) {
 			LOG_ERROR("BUG: register '%s' not found", reg_params[i].reg_name);
@@ -1443,7 +1442,7 @@ static int dsp563xx_run_algorithm(struct target *target,
 
 			struct reg *reg = register_get_by_name(dsp563xx->core_cache,
 					reg_params[i].reg_name,
-					0);
+					false);
 			if (!reg) {
 				LOG_ERROR("BUG: register '%s' not found", reg_params[i].reg_name);
 				continue;
@@ -1875,78 +1874,17 @@ static int dsp563xx_remove_watchpoint(struct target *target, struct watchpoint *
 	return ERROR_TARGET_RESOURCE_NOT_AVAILABLE;
 }
 
-static void handle_md_output(struct command_context *cmd_ctx,
-	struct target *target,
-	uint32_t address,
-	unsigned size,
-	unsigned count,
-	const uint8_t *buffer)
-{
-	const unsigned line_bytecnt = 32;
-	unsigned line_modulo = line_bytecnt / size;
-
-	char output[line_bytecnt * 4 + 1];
-	unsigned output_len = 0;
-
-	const char *value_fmt;
-	switch (size) {
-		case 4:
-			value_fmt = "%8.8x ";
-			break;
-		case 2:
-			value_fmt = "%4.4x ";
-			break;
-		case 1:
-			value_fmt = "%2.2x ";
-			break;
-		default:
-			/* "can't happen", caller checked */
-			LOG_ERROR("invalid memory read size: %u", size);
-			return;
-	}
-
-	for (unsigned i = 0; i < count; i++) {
-		if (i % line_modulo == 0)
-			output_len += snprintf(output + output_len,
-					sizeof(output) - output_len,
-					"0x%8.8x: ",
-					(unsigned) (address + i));
-
-		uint32_t value = 0;
-		const uint8_t *value_ptr = buffer + i * size;
-		switch (size) {
-			case 4:
-				value = target_buffer_get_u32(target, value_ptr);
-				break;
-			case 2:
-				value = target_buffer_get_u16(target, value_ptr);
-				break;
-			case 1:
-				value = *value_ptr;
-		}
-		output_len += snprintf(output + output_len,
-				sizeof(output) - output_len,
-				value_fmt,
-				value);
-
-		if ((i % line_modulo == line_modulo - 1) || (i == count - 1)) {
-			command_print(cmd_ctx, "%s", output);
-			output_len = 0;
-		}
-	}
-}
-
-static int dsp563xx_add_custom_watchpoint(struct target *target, uint32_t address, uint32_t memType,
+static int dsp563xx_add_custom_watchpoint(struct target *target, uint32_t address, uint32_t mem_type,
 		enum watchpoint_rw rw, enum watchpoint_condition cond)
 {
 	int err = ERROR_OK;
 	struct dsp563xx_common *dsp563xx = target_to_dsp563xx(target);
 
-	bool wasRunning = false;
+	bool was_running = false;
 	/* Only set breakpoint when halted */
 	if (target->state != TARGET_HALTED) {
 		dsp563xx_halt(target);
-		wasRunning = true;
+		was_running = true;
 	}
 
 	if (dsp563xx->hardware_breakpoint[0].used) {
@@ -1956,8 +1894,8 @@ static int dsp563xx_add_custom_watchpoint(struct target *target, uint32_t addres
 
 	uint32_t obcr_value = 0;
 	if	(err == ERROR_OK) {
-		obcr_value |= OBCR_b0_or_b1;
-		switch (memType) {
+		obcr_value |= OBCR_B0_OR_B1;
+		switch (mem_type) {
 			case MEM_X:
 				obcr_value |= OBCR_BP_MEM_X;
 				break;
@@ -1968,7 +1906,7 @@ static int dsp563xx_add_custom_watchpoint(struct target *target, uint32_t addres
 				obcr_value |= OBCR_BP_MEM_P;
 				break;
 			default:
-				LOG_ERROR("Unknown memType parameter (%" PRIu32 ")", memType);
+				LOG_ERROR("Unknown mem_type parameter (%" PRIu32 ")", mem_type);
 				err = ERROR_TARGET_INVALID;
 		}
 	}
@@ -2032,7 +1970,7 @@ static int dsp563xx_add_custom_watchpoint(struct target *target, uint32_t addres
 	if (err == ERROR_OK)
 		dsp563xx->hardware_breakpoint[0].used = BPU_WATCHPOINT;
 
-	if (err == ERROR_OK && wasRunning) {
+	if (err == ERROR_OK && was_running) {
 		/* Resume from current PC */
 		err = dsp563xx_resume(target, 1, 0x0, 0, 0);
 	}
@@ -2208,7 +2146,7 @@ COMMAND_HANDLER(dsp563xx_mem_command)
 		err = dsp563xx_read_memory(target, mem_type, address, sizeof(uint32_t),
 				count, buffer);
 		if (err == ERROR_OK)
-			handle_md_output(CMD_CTX, target, address, sizeof(uint32_t), count, buffer);
+			target_handle_md_output(CMD, target, address, sizeof(uint32_t), count, buffer);
 
 	} else {
 		b = buffer;
@@ -2303,7 +2241,7 @@ static const struct command_registration dsp563xx_command_handlers[] = {
 		.handler = dsp563xx_remove_watchpoint_command,
 		.mode = COMMAND_EXEC,
 		.help = "remove watchpoint custom",
-		.usage = " ",
+		.usage = "",
 	},
 	COMMAND_REGISTRATION_DONE
 };

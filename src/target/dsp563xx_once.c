@@ -1,19 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+
 /***************************************************************************
  *   Copyright (C) 2009 by Mathias Kuester                                 *
  *   mkdorg@users.sourceforge.net                                          *
- *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
- *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 2 of the License, or     *
- *   (at your option) any later version.                                   *
- *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
- *   GNU General Public License for more details.                          *
- *                                                                         *
- *   You should have received a copy of the GNU General Public License     *
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -46,7 +35,7 @@
 #define JTAG_INSTR_BYPASS		0x0F
 
 /** */
-static inline int dsp563xx_write_dr(struct jtag_tap *tap, uint8_t * dr_in, uint8_t * dr_out, int dr_len, int rti)
+static inline int dsp563xx_write_dr(struct jtag_tap *tap, uint8_t *dr_in, uint8_t *dr_out, int dr_len, int rti)
 {
 	jtag_add_plain_dr_scan(dr_len, dr_out, dr_in, TAP_IDLE);
 
@@ -54,19 +43,20 @@ static inline int dsp563xx_write_dr(struct jtag_tap *tap, uint8_t * dr_in, uint8
 }
 
 /** */
-static inline int dsp563xx_write_dr_u8(struct jtag_tap *tap, uint8_t * dr_in, uint8_t dr_out, int dr_len, int rti)
+static inline int dsp563xx_write_dr_u8(struct jtag_tap *tap, uint8_t *dr_in, uint8_t dr_out, int dr_len, int rti)
 {
 	return dsp563xx_write_dr(tap, dr_in, &dr_out, dr_len, rti);
 }
 
 /** */
-static inline int dsp563xx_write_dr_u32(struct jtag_tap *tap, uint32_t * dr_in, uint32_t dr_out, int dr_len, int rti)
+static inline int dsp563xx_write_dr_u32(struct jtag_tap *tap, uint32_t *dr_in, uint32_t dr_out, int dr_len, int rti)
 {
 	return dsp563xx_write_dr(tap, (uint8_t *) dr_in, (uint8_t *) &dr_out, dr_len, rti);
 }
 
 /** single word instruction */
-static inline int dsp563xx_once_ir_exec(struct jtag_tap *tap, int flush, uint8_t instr, uint8_t rw, uint8_t go, uint8_t ex)
+static inline int dsp563xx_once_ir_exec(struct jtag_tap *tap, int flush, uint8_t instr,
+										uint8_t rw, uint8_t go, uint8_t ex)
 {
 	int err;
 
@@ -79,19 +69,19 @@ static inline int dsp563xx_once_ir_exec(struct jtag_tap *tap, int flush, uint8_t
 }
 
 /* IR and DR functions */
-static inline int dsp563xx_write_ir(struct jtag_tap *tap, uint8_t * ir_in, uint8_t * ir_out, int ir_len, int rti)
+static inline int dsp563xx_write_ir(struct jtag_tap *tap, uint8_t *ir_in, uint8_t *ir_out, int ir_len, int rti)
 {
 	jtag_add_plain_ir_scan(tap->ir_length, ir_out, ir_in, TAP_IDLE);
 
 	return ERROR_OK;
 }
 
-static inline int dsp563xx_write_ir_u8(struct jtag_tap *tap, uint8_t * ir_in, uint8_t ir_out, int ir_len, int rti)
+static inline int dsp563xx_write_ir_u8(struct jtag_tap *tap, uint8_t *ir_in, uint8_t ir_out, int ir_len, int rti)
 {
 	return dsp563xx_write_ir(tap, ir_in, &ir_out, ir_len, rti);
 }
 
-static inline int dsp563xx_jtag_sendinstr(struct jtag_tap *tap, uint8_t * ir_in, uint8_t ir_out)
+static inline int dsp563xx_jtag_sendinstr(struct jtag_tap *tap, uint8_t *ir_in, uint8_t ir_out)
 {
 	return dsp563xx_write_ir_u8(tap, ir_in, ir_out, tap->ir_length, 1);
 }
@@ -195,7 +185,7 @@ int dsp563xx_once_read_register(struct jtag_tap *tap, int flush, struct once_reg
 }
 
 /** once read register with register len */
-int dsp563xx_once_reg_read_ex(struct jtag_tap *tap, int flush, uint8_t reg, uint8_t len, uint32_t * data)
+int dsp563xx_once_reg_read_ex(struct jtag_tap *tap, int flush, uint8_t reg, uint8_t len, uint32_t *data)
 {
 	int err;
 
@@ -212,7 +202,7 @@ int dsp563xx_once_reg_read_ex(struct jtag_tap *tap, int flush, uint8_t reg, uint
 }
 
 /** once read register */
-int dsp563xx_once_reg_read(struct jtag_tap *tap, int flush, uint8_t reg, uint32_t * data)
+int dsp563xx_once_reg_read(struct jtag_tap *tap, int flush, uint8_t reg, uint32_t *data)
 {
 	int err;
 

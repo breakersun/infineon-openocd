@@ -17,8 +17,7 @@
 #include "helper/types.h"
 
 struct mips_mips64_common {
-	unsigned int common_magic;
-
+	int common_magic;
 	struct mips64_common mips64_common;
 };
 

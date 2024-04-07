@@ -1,18 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+
 /***************************************************************************
  *   Copyright (C) 2009 Zachary T Welch <zw@superlucidity.net>             *
- *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
- *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 2 of the License, or     *
- *   (at your option) any later version.                                   *
- *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
- *   GNU General Public License for more details.                          *
- *                                                                         *
- *   You should have received a copy of the GNU General Public License     *
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -39,6 +28,7 @@ extern const struct flash_driver cfi_flash;
 extern const struct flash_driver cmsis_flash;
 extern const struct flash_driver cmspi_flash;
 extern const struct flash_driver dsp5680xx_flash;
+extern const struct flash_driver dummy_flash;
 extern const struct flash_driver efm32_flash;
 extern const struct flash_driver em357_flash;
 extern const struct flash_driver esirisc_flash;
@@ -58,6 +48,7 @@ extern const struct flash_driver mdr_flash;
 extern const struct flash_driver mrvlqspi_flash;
 extern const struct flash_driver msp432_flash;
 extern const struct flash_driver niietcm4_flash;
+extern const struct flash_driver npcx_flash;
 extern const struct flash_driver nrf5_flash;
 extern const struct flash_driver nrf51_flash;
 extern const struct flash_driver numicro_flash;
@@ -71,6 +62,10 @@ extern const struct flash_driver psoc6_efuse;
 extern const struct flash_driver psoc6_2m_efuse;
 extern const struct flash_driver psoc6_flash;
 extern const struct flash_driver psoc6_2m_flash;
+extern const struct flash_driver macaw_efuse;
+extern const struct flash_driver renesas_rpchf_flash;
+extern const struct flash_driver rp2040_flash;
+extern const struct flash_driver sh_qspi_flash;
 extern const struct flash_driver sim3x_flash;
 extern const struct flash_driver stellaris_flash;
 extern const struct flash_driver stm32f1x_flash;
@@ -78,10 +73,12 @@ extern const struct flash_driver stm32f2x_flash;
 extern const struct flash_driver stm32lx_flash;
 extern const struct flash_driver stm32l4x_flash;
 extern const struct flash_driver stm32h7x_flash;
+extern const struct flash_driver stmqspi_flash;
 extern const struct flash_driver stmsmi_flash;
 extern const struct flash_driver str7x_flash;
 extern const struct flash_driver str9x_flash;
 extern const struct flash_driver str9xpec_flash;
+extern const struct flash_driver swm050_flash;
 extern const struct flash_driver tms470_flash;
 extern const struct flash_driver traveo21_efuse;
 extern const struct flash_driver traveo22_efuse;
@@ -92,6 +89,8 @@ extern const struct flash_driver w600_flash;
 extern const struct flash_driver xcf_flash;
 extern const struct flash_driver xmc1xxx_flash;
 extern const struct flash_driver xmc4xxx_flash;
+extern const struct flash_driver cat1c_efuse;
+extern const struct flash_driver cat1c_flash;
 
 /**
  * The list of built-in flash drivers.
@@ -117,6 +116,7 @@ static const struct flash_driver * const flash_drivers[] = {
 	&cmsis_flash,
 	&cmspi_flash,
 	&dsp5680xx_flash,
+	&dummy_flash,
 	&efm32_flash,
 	&em357_flash,
 	&esirisc_flash,
@@ -136,6 +136,7 @@ static const struct flash_driver * const flash_drivers[] = {
 	&mrvlqspi_flash,
 	&msp432_flash,
 	&niietcm4_flash,
+	&npcx_flash,
 	&nrf5_flash,
 	&nrf51_flash,
 	&numicro_flash,
@@ -149,6 +150,10 @@ static const struct flash_driver * const flash_drivers[] = {
 	&psoc6_2m_efuse,
 	&psoc6_flash,
 	&psoc6_2m_flash,
+	&macaw_efuse,
+	&renesas_rpchf_flash,
+	&rp2040_flash,
+	&sh_qspi_flash,
 	&sim3x_flash,
 	&stellaris_flash,
 	&stm32f1x_flash,
@@ -157,9 +162,11 @@ static const struct flash_driver * const flash_drivers[] = {
 	&stm32l4x_flash,
 	&stm32h7x_flash,
 	&stmsmi_flash,
+	&stmqspi_flash,
 	&str7x_flash,
 	&str9x_flash,
 	&str9xpec_flash,
+	&swm050_flash,
 	&tms470_flash,
 	&traveo21_efuse,
 	&traveo22_efuse,
@@ -169,6 +176,8 @@ static const struct flash_driver * const flash_drivers[] = {
 	&xcf_flash,
 	&xmc1xxx_flash,
 	&xmc4xxx_flash,
+	&cat1c_efuse,
+	&cat1c_flash,
 	&w600_flash,
 	NULL,
 };

@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+
 /***************************************************************************
  *   Copyright (C) 2005 by Dominic Rath                                    *
  *   Dominic.Rath@gmx.de                                                   *
@@ -7,19 +9,6 @@
  *                                                                         *
  *   Copyright (C) 2011 Øyvind Harboe                                      *
  *   oyvind.harboe@zylin.com                                               *
- *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
- *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 2 of the License, or     *
- *   (at your option) any later version.                                   *
- *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
- *   GNU General Public License for more details.                          *
- *                                                                         *
- *   You should have received a copy of the GNU General Public License     *
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -29,7 +18,8 @@
 #include "imp.h"
 #include <helper/binarybuffer.h>
 #include <target/algorithm.h>
-#include <target/armv7m.h>
+#include <target/cortex_m.h>
+#include <flash/progress.h>
 
 /* Regarding performance:
  *
@@ -55,7 +45,7 @@
  * can be very different.
  *
  * To reduce testing complexity and dangers of regressions,
- * a seperate file is used for stm32fx2x.
+ * a separate file is used for stm32fx2x.
  *
  * Sector sizes in kiBytes:
  * 1 MiByte part with 4 x 16, 1 x 64, 7 x 128.
@@ -204,7 +194,7 @@ struct stm32x_flash_bank {
 	bool has_extra_options; /* F42x/43x/469/479/7xx */
 	bool has_boot_addr;     /* F7xx */
 	bool has_optcr2_pcrop;	/* F72x/73x */
-	int protection_bits;	/* F413/423 */
+	unsigned int protection_bits; /* F413/423 */
 	uint32_t user_bank_size;
 };
 
@@ -230,7 +220,7 @@ static int stm32x_otp_disable(struct flash_bank *bank)
 {
 	struct stm32x_flash_bank *stm32x_info = bank->driver_priv;
 
-	LOG_INFO("OTP memory bank #%d is disabled for write commands.",
+	LOG_INFO("OTP memory bank #%u is disabled for write commands.",
 		 bank->bank_number);
 	stm32x_info->otp_unlocked = false;
 	return ERROR_OK;
@@ -241,11 +231,11 @@ static int stm32x_otp_enable(struct flash_bank *bank)
 	struct stm32x_flash_bank *stm32x_info = bank->driver_priv;
 
 	if (!stm32x_info->otp_unlocked) {
-		LOG_INFO("OTP memory bank #%d is is enabled for write commands.",
+		LOG_INFO("OTP memory bank #%u is is enabled for write commands.",
 			 bank->bank_number);
 		stm32x_info->otp_unlocked = true;
 	} else {
-		LOG_WARNING("OTP memory bank #%d is is already enabled for write commands.",
+		LOG_WARNING("OTP memory bank #%u is is already enabled for write commands.",
 			    bank->bank_number);
 	}
 	return ERROR_OK;
@@ -292,7 +282,7 @@ static int stm32x_wait_status_busy(struct flash_bank *bank, int timeout)
 		retval = stm32x_get_flash_status(bank, &status);
 		if (retval != ERROR_OK)
 			return retval;
-		LOG_DEBUG("status: 0x%" PRIx32 "", status);
+		LOG_DEBUG("status: 0x%" PRIx32, status);
 		if ((status & FLASH_BSY) == 0)
 			break;
 		if (timeout-- <= 0) {
@@ -349,7 +339,7 @@ static int stm32x_unlock_reg(struct target *target)
 		return retval;
 
 	if (ctrl & FLASH_LOCK) {
-		LOG_ERROR("flash not unlocked STM32_FLASH_CR: %" PRIx32, ctrl);
+		LOG_ERROR("flash not unlocked STM32_FLASH_CR: 0x%" PRIx32, ctrl);
 		return ERROR_TARGET_FAILURE;
 	}
 
@@ -381,7 +371,7 @@ static int stm32x_unlock_option_reg(struct target *target)
 		return retval;
 
 	if (ctrl & OPTCR_LOCK) {
-		LOG_ERROR("options not unlocked STM32_FLASH_OPTCR: %" PRIx32, ctrl);
+		LOG_ERROR("options not unlocked STM32_FLASH_OPTCR: 0x%" PRIx32, ctrl);
 		return ERROR_TARGET_FAILURE;
 	}
 
@@ -419,7 +409,7 @@ static int stm32x_read_options(struct flash_bank *bank)
 		if (retval != ERROR_OK)
 			return retval;
 
-		/* FLASH_OPTCR1 has quite diffent meanings ... */
+		/* FLASH_OPTCR1 has quite different meanings ... */
 		if (stm32x_info->has_boot_addr) {
 			/* for F7xx it contains boot0 and boot1 */
 			stm32x_info->option_bytes.boot_addr = optiondata;
@@ -522,13 +512,13 @@ static int stm32x_otp_read_protect(struct flash_bank *bank)
 {
 	struct target *target = bank->target;
 	uint32_t lock_base;
-	int i, retval;
+	int retval;
 	uint8_t lock;
 
 	lock_base = stm32x_otp_is_f7(bank) ? STM32F7_OTP_LOCK_BASE
 		  : STM32F2_OTP_LOCK_BASE;
 
-	for (i = 0; i < bank->num_sectors; i++) {
+	for (unsigned int i = 0; i < bank->num_sectors; i++) {
 		retval = target_read_u8(target, lock_base + i, &lock);
 		if (retval != ERROR_OK)
 			return retval;
@@ -538,14 +528,15 @@ static int stm32x_otp_read_protect(struct flash_bank *bank)
 	return ERROR_OK;
 }
 
-static int stm32x_otp_protect(struct flash_bank *bank, int first, int last)
+static int stm32x_otp_protect(struct flash_bank *bank, unsigned int first,
+		unsigned int last)
 {
 	struct target *target = bank->target;
 	uint32_t lock_base;
 	int i, retval;
 	uint8_t lock;
 
-	assert((0 <= first) && (first <= last) && (last < bank->num_sectors));
+	assert((first <= last) && (last < bank->num_sectors));
 
 	lock_base = stm32x_otp_is_f7(bank) ? STM32F7_OTP_LOCK_BASE
 		  : STM32F2_OTP_LOCK_BASE;
@@ -570,7 +561,7 @@ static int stm32x_protect_check(struct flash_bank *bank)
 {
 	struct stm32x_flash_bank *stm32x_info = bank->driver_priv;
 	struct flash_sector *prot_blocks;
-	int num_prot_blocks;
+	unsigned int num_prot_blocks;
 	int retval;
 
 	/* if it's the OTP bank, look at the lock bits there */
@@ -592,25 +583,25 @@ static int stm32x_protect_check(struct flash_bank *bank)
 		prot_blocks = bank->sectors;
 	}
 
-	for (int i = 0; i < num_prot_blocks; i++)
+	for (unsigned int i = 0; i < num_prot_blocks; i++)
 		prot_blocks[i].is_protected =
 			~(stm32x_info->option_bytes.protection >> i) & 1;
 
 	return ERROR_OK;
 }
 
-static int stm32x_erase(struct flash_bank *bank, int first, int last)
+static int stm32x_erase(struct flash_bank *bank, unsigned int first,
+		unsigned int last)
 {
 	struct stm32x_flash_bank *stm32x_info = bank->driver_priv;
 	struct target *target = bank->target;
-	int i;
 
 	if (stm32x_is_otp(bank)) {
 		LOG_ERROR("Cannot erase OTP memory");
 		return ERROR_FAIL;
 	}
 
-	assert((0 <= first) && (first <= last) && (last < bank->num_sectors));
+	assert((first <= last) && (last < bank->num_sectors));
 
 	if (bank->target->state != TARGET_HALTED) {
 		LOG_ERROR("Target not halted");
@@ -633,33 +624,37 @@ static int stm32x_erase(struct flash_bank *bank, int first, int last)
 	4. Wait for the BSY bit to be cleared
 	 */
 
-	for (i = first; i <= last; i++) {
-		int snb;
-		if (stm32x_info->has_large_mem && i >= 12)
-			snb = (i - 12) | 0x10;
+	unsigned int num_sectors = last - first + 1;
+	progress_init(num_sectors, ERASING);
+	for (unsigned int i = first; i <= last; i++) {
+		unsigned int snb;
+		if (stm32x_info->has_large_mem && i >= (bank->num_sectors / 2))
+			snb = (i - (bank->num_sectors / 2)) | 0x10;
 		else
 			snb = i;
 
 		retval = target_write_u32(target,
 				stm32x_get_flash_reg(bank, STM32_FLASH_CR), FLASH_SER | FLASH_SNB(snb) | FLASH_STRT);
 		if (retval != ERROR_OK)
-			return retval;
+			goto exit;
 
 		retval = stm32x_wait_status_busy(bank, FLASH_ERASE_TIMEOUT);
 		if (retval != ERROR_OK)
-			return retval;
+			goto exit;
 
-		bank->sectors[i].is_erased = 1;
+		num_sectors--;
+		progress_left(num_sectors);
 	}
 
 	retval = target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_CR), FLASH_LOCK);
-	if (retval != ERROR_OK)
-		return retval;
 
-	return ERROR_OK;
+exit:
+	progress_done(retval);
+	return retval;
 }
 
-static int stm32x_protect(struct flash_bank *bank, int set, int first, int last)
+static int stm32x_protect(struct flash_bank *bank, int set, unsigned int first,
+		unsigned int last)
 {
 	struct target *target = bank->target;
 	struct stm32x_flash_bank *stm32x_info = bank->driver_priv;
@@ -683,7 +678,7 @@ static int stm32x_protect(struct flash_bank *bank, int set, int first, int last)
 		return retval;
 	}
 
-	for (int i = first; i <= last; i++) {
+	for (unsigned int i = first; i <= last; i++) {
 		if (set)
 			stm32x_info->option_bytes.protection &= ~(1 << i);
 		else
@@ -776,7 +771,7 @@ static int stm32x_write_block(struct flash_bank *bank, const uint8_t *buffer,
 			LOG_ERROR("flash memory write protected");
 
 		if (error != 0) {
-			LOG_ERROR("flash write failed = %08" PRIx32, error);
+			LOG_ERROR("flash write failed = 0x%08" PRIx32, error);
 			/* Clear but report errors */
 			target_write_u32(target, STM32_FLASH_SR, error);
 			retval = ERROR_FAIL;
@@ -856,15 +851,12 @@ static int stm32x_write(struct flash_bank *bank, const uint8_t *buffer,
 	Wait for the BSY bit to be cleared
 	*/
 	while (words_remaining > 0) {
-		uint16_t value;
-		memcpy(&value, buffer + bytes_written, sizeof(uint16_t));
-
 		retval = target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_CR),
 				FLASH_PG | FLASH_PSIZE_16);
 		if (retval != ERROR_OK)
 			return retval;
 
-		retval = target_write_u16(target, address, value);
+		retval = target_write_memory(target, address, 2, 1, buffer + bytes_written);
 		if (retval != ERROR_OK)
 			return retval;
 
@@ -894,31 +886,68 @@ static int stm32x_write(struct flash_bank *bank, const uint8_t *buffer,
 	return target_write_u32(target, STM32_FLASH_CR, FLASH_LOCK);
 }
 
-static int setup_sector(struct flash_bank *bank, int start, int num, int size)
+static void setup_sector(struct flash_bank *bank, unsigned int i,
+		unsigned int size)
 {
-
-	for (int i = start; i < (start + num) ; i++) {
-		assert(i < bank->num_sectors);
-		bank->sectors[i].offset = bank->size;
-		bank->sectors[i].size = size;
-		bank->size += bank->sectors[i].size;
-	    LOG_DEBUG("sector %d: %d kBytes", i, size >> 10);
-	}
-
-	return start + num;
+	assert(i < bank->num_sectors);
+	bank->sectors[i].offset = bank->size;
+	bank->sectors[i].size = size;
+	bank->size += bank->sectors[i].size;
+	LOG_DEBUG("sector %u: %ukBytes", i, size >> 10);
 }
 
-static void setup_bank(struct flash_bank *bank, int start,
+static uint16_t sector_size_in_kb(unsigned int i, uint16_t max_sector_size_in_kb)
+{
+	if (i < 4)
+		return max_sector_size_in_kb / 8;
+	if (i == 4)
+		return max_sector_size_in_kb / 2;
+	return max_sector_size_in_kb;
+}
+
+static unsigned int calculate_number_of_sectors(struct flash_bank *bank,
+		uint16_t flash_size_in_kb,
+		uint16_t max_sector_size_in_kb)
+{
+	struct stm32x_flash_bank *stm32x_info = bank->driver_priv;
+	uint16_t remaining_flash_size_in_kb = flash_size_in_kb;
+	unsigned int nr_sectors;
+
+	/* Dual Bank Flash has two identically-arranged banks of sectors. */
+	if (stm32x_info->has_large_mem)
+		remaining_flash_size_in_kb /= 2;
+
+	for (nr_sectors = 0; remaining_flash_size_in_kb > 0; nr_sectors++) {
+		uint16_t size_in_kb = sector_size_in_kb(nr_sectors, max_sector_size_in_kb);
+		if (size_in_kb > remaining_flash_size_in_kb) {
+			LOG_INFO("%s Bank %" PRIu16 " kiB final sector clipped to %" PRIu16 " kiB",
+				 stm32x_info->has_large_mem ? "Dual" : "Single",
+				 flash_size_in_kb, remaining_flash_size_in_kb);
+			remaining_flash_size_in_kb = 0;
+		} else {
+			remaining_flash_size_in_kb -= size_in_kb;
+		}
+	}
+
+	return stm32x_info->has_large_mem ? nr_sectors*2 : nr_sectors;
+}
+
+static void setup_bank(struct flash_bank *bank, unsigned int start,
 	uint16_t flash_size_in_kb, uint16_t max_sector_size_in_kb)
 {
-	int remain;
-
-	start = setup_sector(bank, start, 4, (max_sector_size_in_kb / 8) * 1024);
-	start = setup_sector(bank, start, 1, (max_sector_size_in_kb / 2) * 1024);
-
-	/* remaining sectors all of size max_sector_size_in_kb */
-	remain = (flash_size_in_kb / max_sector_size_in_kb) - 1;
-	start = setup_sector(bank, start, remain, max_sector_size_in_kb * 1024);
+	uint16_t remaining_flash_size_in_kb = flash_size_in_kb;
+	unsigned int sector_index = 0;
+	while (remaining_flash_size_in_kb > 0) {
+		uint16_t size_in_kb = sector_size_in_kb(sector_index, max_sector_size_in_kb);
+		if (size_in_kb > remaining_flash_size_in_kb) {
+			/* Clip last sector. Already warned in
+			 * calculate_number_of_sectors. */
+			size_in_kb = remaining_flash_size_in_kb;
+		}
+		setup_sector(bank, start + sector_index, size_in_kb * 1024);
+		remaining_flash_size_in_kb -= size_in_kb;
+		sector_index++;
+	}
 }
 
 static int stm32x_get_device_id(struct flash_bank *bank, uint32_t *device_id)
@@ -929,25 +958,17 @@ static int stm32x_get_device_id(struct flash_bank *bank, uint32_t *device_id)
 	 * Only effects Rev A silicon */
 
 	struct target *target = bank->target;
-	uint32_t cpuid;
 
 	/* read stm32 device id register */
 	int retval = target_read_u32(target, 0xE0042000, device_id);
 	if (retval != ERROR_OK)
 		return retval;
 
-	if ((*device_id & 0xfff) == 0x411) {
-		/* read CPUID reg to check core type */
-		retval = target_read_u32(target, 0xE000ED00, &cpuid);
-		if (retval != ERROR_OK)
-			return retval;
-
-		/* check for cortex_m4 */
-		if (((cpuid >> 4) & 0xFFF) == 0xC24) {
-			*device_id &= ~((0xFFFF << 16) | 0xfff);
-			*device_id |= (0x1000 << 16) | 0x413;
-			LOG_INFO("stm32f4x errata detected - fixing incorrect MCU_IDCODE");
-		}
+	if ((*device_id & 0xfff) == 0x411
+			&& cortex_m_get_partno_safe(target) == CORTEX_M4_PARTNO) {
+		*device_id &= ~((0xFFFF << 16) | 0xfff);
+		*device_id |= (0x1000 << 16) | 0x413;
+		LOG_INFO("stm32f4x errata detected - fixing incorrect MCU_IDCODE");
 	}
 	return retval;
 }
@@ -956,7 +977,7 @@ static int stm32x_probe(struct flash_bank *bank)
 {
 	struct target *target = bank->target;
 	struct stm32x_flash_bank *stm32x_info = bank->driver_priv;
-	int i, num_prot_blocks, num_sectors;
+	unsigned int num_prot_blocks, num_sectors;
 	uint16_t flash_size_in_kb;
 	uint16_t otp_size_in_b;
 	uint16_t otp_sector_size;
@@ -974,19 +995,20 @@ static int stm32x_probe(struct flash_bank *bank)
 	stm32x_info->protection_bits = 12;		/* max. number of nWRPi bits (in FLASH_OPTCR !!!) */
 	num_prot_blocks = 0;
 
-	if (bank->sectors) {
-		free(bank->sectors);
-		bank->num_sectors = 0;
-		bank->sectors = NULL;
+	free(bank->sectors);
+	bank->num_sectors = 0;
+	bank->sectors = NULL;
+
+	free(bank->prot_blocks);
+	bank->num_prot_blocks = 0;
+	bank->prot_blocks = NULL;
+
+	if (!target_was_examined(target)) {
+		LOG_ERROR("Target not examined yet");
+		return ERROR_TARGET_NOT_EXAMINED;
 	}
 
-	if (bank->prot_blocks) {
-		free(bank->prot_blocks);
-		bank->num_prot_blocks = 0;
-		bank->prot_blocks = NULL;
-	}
-
-	/* if explicitely called out as OTP bank, short circuit probe */
+	/* if explicitly called out as OTP bank, short circuit probe */
 	if (stm32x_is_otp(bank)) {
 		if (stm32x_otp_is_f7(bank)) {
 			otp_size_in_b = STM32F7_OTP_SIZE;
@@ -997,7 +1019,7 @@ static int stm32x_probe(struct flash_bank *bank)
 		}
 
 		num_sectors = otp_size_in_b / otp_sector_size;
-		LOG_INFO("flash size = %d bytes", otp_size_in_b);
+		LOG_INFO("flash size = %" PRIu16 " bytes", otp_size_in_b);
 
 		assert(num_sectors > 0);
 
@@ -1009,7 +1031,7 @@ static int stm32x_probe(struct flash_bank *bank)
 		else
 			bank->size = STM32F2_OTP_SIZE;
 
-		for (i = 0; i < num_sectors; i++) {
+		for (unsigned int i = 0; i < num_sectors; i++) {
 			bank->sectors[i].offset = i * otp_sector_size;
 			bank->sectors[i].size = otp_sector_size;
 			bank->sectors[i].is_erased = 1;
@@ -1024,7 +1046,7 @@ static int stm32x_probe(struct flash_bank *bank)
 	int retval = stm32x_get_device_id(bank, &device_id);
 	if (retval != ERROR_OK)
 		return retval;
-	LOG_INFO("device id = 0x%08" PRIx32 "", device_id);
+	LOG_INFO("device id = 0x%08" PRIx32, device_id);
 	device_id &= 0xfff;		/* only bits 0-11 are used further on */
 
 	/* set max flash size depending on family, id taken from AN2606 */
@@ -1097,7 +1119,7 @@ static int stm32x_probe(struct flash_bank *bank)
 	/* failed reading flash size or flash size invalid (early silicon),
 	 * default to max target family */
 	if (retval != ERROR_OK || flash_size_in_kb == 0xffff || flash_size_in_kb == 0) {
-		LOG_WARNING("STM32 flash size failed, probe inaccurate - assuming %dk flash",
+		LOG_WARNING("STM32 flash size failed, probe inaccurate - assuming %" PRIu16 "k flash",
 			max_flash_size_in_kb);
 		flash_size_in_kb = max_flash_size_in_kb;
 	}
@@ -1109,7 +1131,7 @@ static int stm32x_probe(struct flash_bank *bank)
 		flash_size_in_kb = stm32x_info->user_bank_size / 1024;
 	}
 
-	LOG_INFO("flash size = %d kbytes", flash_size_in_kb);
+	LOG_INFO("flash size = %" PRIu16 " kbytes", flash_size_in_kb);
 
 	/* did we assign flash size? */
 	assert(flash_size_in_kb != 0xffff);
@@ -1124,10 +1146,10 @@ static int stm32x_probe(struct flash_bank *bank)
 		}
 		if ((flash_size_in_kb > 1024) || (optiondata & OPTCR_DB1M)) {
 			stm32x_info->has_large_mem = true;
-			LOG_INFO("Dual Bank %d kiB STM32F42x/43x/469/479 found", flash_size_in_kb);
+			LOG_INFO("Dual Bank %" PRIu16 " kiB STM32F42x/43x/469/479 found", flash_size_in_kb);
 		} else {
 			stm32x_info->has_large_mem = false;
-			LOG_INFO("Single Bank %d kiB STM32F42x/43x/469/479 found", flash_size_in_kb);
+			LOG_INFO("Single Bank %" PRIu16 " kiB STM32F42x/43x/469/479 found", flash_size_in_kb);
 		}
 	}
 
@@ -1141,27 +1163,27 @@ static int stm32x_probe(struct flash_bank *bank)
 		}
 		if (optiondata & OPTCR_NDBANK) {
 			stm32x_info->has_large_mem = false;
-			LOG_INFO("Single Bank %d kiB STM32F76x/77x found", flash_size_in_kb);
+			LOG_INFO("Single Bank %" PRIu16 " kiB STM32F76x/77x found", flash_size_in_kb);
 		} else {
 			stm32x_info->has_large_mem = true;
 			max_sector_size_in_kb >>= 1; /* sector size divided by 2 in dual-bank mode */
-			LOG_INFO("Dual Bank %d kiB STM32F76x/77x found", flash_size_in_kb);
+			LOG_INFO("Dual Bank %" PRIu16 " kiB STM32F76x/77x found", flash_size_in_kb);
 		}
 	}
 
 	/* calculate numbers of pages */
-	int num_pages = flash_size_in_kb / max_sector_size_in_kb
-		+ (stm32x_info->has_large_mem ? 8 : 4);
+	unsigned int num_pages = calculate_number_of_sectors(
+			bank, flash_size_in_kb, max_sector_size_in_kb);
 
 	bank->base = base_address;
 	bank->num_sectors = num_pages;
-	bank->sectors = malloc(sizeof(struct flash_sector) * num_pages);
-	for (i = 0; i < num_pages; i++) {
+	bank->sectors = calloc(num_pages, sizeof(struct flash_sector));
+	for (unsigned int i = 0; i < num_pages; i++) {
 		bank->sectors[i].is_erased = -1;
 		bank->sectors[i].is_protected = 0;
 	}
 	bank->size = 0;
-	LOG_DEBUG("allocated %d sectors", num_pages);
+	LOG_DEBUG("allocated %u sectors", num_pages);
 
 	/* F76x/77x in dual bank mode */
 	if ((device_id == 0x451) && stm32x_info->has_large_mem)
@@ -1169,9 +1191,9 @@ static int stm32x_probe(struct flash_bank *bank)
 
 	if (num_prot_blocks) {
 		bank->prot_blocks = malloc(sizeof(struct flash_sector) * num_prot_blocks);
-		for (i = 0; i < num_prot_blocks; i++)
+		for (unsigned int i = 0; i < num_prot_blocks; i++)
 			bank->prot_blocks[i].is_protected = 0;
-		LOG_DEBUG("allocated %d prot blocks", num_prot_blocks);
+		LOG_DEBUG("allocated %u prot blocks", num_prot_blocks);
 	}
 
 	if (stm32x_info->has_large_mem) {
@@ -1182,7 +1204,7 @@ static int stm32x_probe(struct flash_bank *bank)
 
 		/* F767x/F77x in dual mode, one protection bit refers to two adjacent sectors */
 		if (device_id == 0x451) {
-			for (i = 0; i < num_prot_blocks; i++) {
+			for (unsigned int i = 0; i < num_prot_blocks; i++) {
 				bank->prot_blocks[i].offset = bank->sectors[i << 1].offset;
 				bank->prot_blocks[i].size = bank->sectors[i << 1].size
 						+ bank->sectors[(i << 1) + 1].size;
@@ -1194,7 +1216,7 @@ static int stm32x_probe(struct flash_bank *bank)
 
 		/* F413/F423, sectors 14 and 15 share one common protection bit */
 		if (device_id == 0x463) {
-			for (i = 0; i < num_prot_blocks; i++) {
+			for (unsigned int i = 0; i < num_prot_blocks; i++) {
 				bank->prot_blocks[i].offset = bank->sectors[i].offset;
 				bank->prot_blocks[i].size = bank->sectors[i].size;
 			}
@@ -1216,7 +1238,7 @@ static int stm32x_auto_probe(struct flash_bank *bank)
 	return stm32x_probe(bank);
 }
 
-static int get_stm32x_info(struct flash_bank *bank, char *buf, int buf_size)
+static int get_stm32x_info(struct flash_bank *bank, struct command_invocation *cmd)
 {
 	uint32_t dbgmcu_idcode;
 
@@ -1381,14 +1403,14 @@ static int get_stm32x_info(struct flash_bank *bank, char *buf, int buf_size)
 		break;
 
 	default:
-		snprintf(buf, buf_size, "Cannot identify target as a STM32F2/4/7\n");
+		command_print_sameline(cmd, "Cannot identify target as a STM32F2/4/7\n");
 		return ERROR_FAIL;
 	}
 
-	if (rev_str != NULL)
-		snprintf(buf, buf_size, "%s - Rev: %s", device_str, rev_str);
+	if (rev_str)
+		command_print_sameline(cmd, "%s - Rev: %s", device_str, rev_str);
 	else
-		snprintf(buf, buf_size, "%s - Rev: unknown (0x%04x)", device_str, rev_id);
+		command_print_sameline(cmd, "%s - Rev: unknown (0x%04" PRIx16 ")", device_str, rev_id);
 
 	return ERROR_OK;
 }
@@ -1403,7 +1425,7 @@ COMMAND_HANDLER(stm32x_handle_lock_command)
 
 	struct flash_bank *bank;
 	int retval = CALL_COMMAND_HANDLER(flash_command_get_bank, 0, &bank);
-	if (ERROR_OK != retval)
+	if (retval != ERROR_OK)
 		return retval;
 
 	stm32x_info = bank->driver_priv;
@@ -1415,7 +1437,7 @@ COMMAND_HANDLER(stm32x_handle_lock_command)
 	}
 
 	if (stm32x_read_options(bank) != ERROR_OK) {
-		command_print(CMD_CTX, "%s failed to read options", bank->driver->name);
+		command_print(CMD, "%s failed to read options", bank->driver->name);
 		return ERROR_OK;
 	}
 
@@ -1423,11 +1445,11 @@ COMMAND_HANDLER(stm32x_handle_lock_command)
 	stm32x_info->option_bytes.RDP = 0;
 
 	if (stm32x_write_options(bank) != ERROR_OK) {
-		command_print(CMD_CTX, "%s failed to lock device", bank->driver->name);
+		command_print(CMD, "%s failed to lock device", bank->driver->name);
 		return ERROR_OK;
 	}
 
-	command_print(CMD_CTX, "%s locked", bank->driver->name);
+	command_print(CMD, "%s locked", bank->driver->name);
 
 	return ERROR_OK;
 }
@@ -1442,7 +1464,7 @@ COMMAND_HANDLER(stm32x_handle_unlock_command)
 
 	struct flash_bank *bank;
 	int retval = CALL_COMMAND_HANDLER(flash_command_get_bank, 0, &bank);
-	if (ERROR_OK != retval)
+	if (retval != ERROR_OK)
 		return retval;
 
 	stm32x_info = bank->driver_priv;
@@ -1454,7 +1476,7 @@ COMMAND_HANDLER(stm32x_handle_unlock_command)
 	}
 
 	if (stm32x_read_options(bank) != ERROR_OK) {
-		command_print(CMD_CTX, "%s failed to read options", bank->driver->name);
+		command_print(CMD, "%s failed to read options", bank->driver->name);
 		return ERROR_OK;
 	}
 
@@ -1466,11 +1488,11 @@ COMMAND_HANDLER(stm32x_handle_unlock_command)
 	}
 
 	if (stm32x_write_options(bank) != ERROR_OK) {
-		command_print(CMD_CTX, "%s failed to unlock device", bank->driver->name);
+		command_print(CMD, "%s failed to unlock device", bank->driver->name);
 		return ERROR_OK;
 	}
 
-	command_print(CMD_CTX, "%s unlocked.\n"
+	command_print(CMD, "%s unlocked.\n"
 			"INFO: a reset or power cycle is required "
 			"for the new settings to take effect.", bank->driver->name);
 
@@ -1522,27 +1544,21 @@ static int stm32x_mass_erase(struct flash_bank *bank)
 
 COMMAND_HANDLER(stm32x_handle_mass_erase_command)
 {
-	int i;
-
 	if (CMD_ARGC < 1) {
-		command_print(CMD_CTX, "stm32x mass_erase <bank>");
+		command_print(CMD, "stm32x mass_erase <bank>");
 		return ERROR_COMMAND_SYNTAX_ERROR;
 	}
 
 	struct flash_bank *bank;
 	int retval = CALL_COMMAND_HANDLER(flash_command_get_bank, 0, &bank);
-	if (ERROR_OK != retval)
+	if (retval != ERROR_OK)
 		return retval;
 
 	retval = stm32x_mass_erase(bank);
 	if (retval == ERROR_OK) {
-		/* set all sectors as erased */
-		for (i = 0; i < bank->num_sectors; i++)
-			bank->sectors[i].is_erased = 1;
-
-		command_print(CMD_CTX, "stm32x mass erase complete");
+		command_print(CMD, "stm32x mass erase complete");
 	} else {
-		command_print(CMD_CTX, "stm32x mass erase failed");
+		command_print(CMD, "stm32x mass erase failed");
 	}
 
 	return retval;
@@ -1555,16 +1571,16 @@ COMMAND_HANDLER(stm32f2x_handle_options_read_command)
 	struct stm32x_flash_bank *stm32x_info = NULL;
 
 	if (CMD_ARGC != 1) {
-		command_print(CMD_CTX, "stm32f2x options_read <bank>");
+		command_print(CMD, "stm32f2x options_read <bank>");
 		return ERROR_COMMAND_SYNTAX_ERROR;
 	}
 
 	retval = CALL_COMMAND_HANDLER(flash_command_get_bank, 0, &bank);
-	if (ERROR_OK != retval)
+	if (retval != ERROR_OK)
 		return retval;
 
 	retval = stm32x_read_options(bank);
-	if (ERROR_OK != retval)
+	if (retval != ERROR_OK)
 		return retval;
 
 	stm32x_info = bank->driver_priv;
@@ -1572,20 +1588,20 @@ COMMAND_HANDLER(stm32f2x_handle_options_read_command)
 		if (stm32x_info->has_boot_addr) {
 			uint32_t boot_addr = stm32x_info->option_bytes.boot_addr;
 
-			command_print(CMD_CTX, "stm32f2x user_options 0x%03X,"
-				" boot_add0 0x%04X, boot_add1 0x%04X",
+			command_print(CMD, "stm32f2x user_options 0x%03" PRIX16 ","
+				" boot_add0 0x%04" PRIX32 ", boot_add1 0x%04" PRIX32,
 				stm32x_info->option_bytes.user_options,
 				boot_addr & 0xffff, (boot_addr & 0xffff0000) >> 16);
 			if (stm32x_info->has_optcr2_pcrop) {
-				command_print(CMD_CTX, "stm32f2x optcr2_pcrop 0x%08X",
+				command_print(CMD, "stm32f2x optcr2_pcrop 0x%08" PRIX32,
 						stm32x_info->option_bytes.optcr2_pcrop);
 			}
 		} else {
-			command_print(CMD_CTX, "stm32f2x user_options 0x%03X",
+			command_print(CMD, "stm32f2x user_options 0x%03" PRIX16,
 				stm32x_info->option_bytes.user_options);
 		}
 	} else {
-		command_print(CMD_CTX, "stm32f2x user_options 0x%02X",
+		command_print(CMD, "stm32f2x user_options 0x%02" PRIX16,
 			stm32x_info->option_bytes.user_options);
 
 	}
@@ -1601,22 +1617,22 @@ COMMAND_HANDLER(stm32f2x_handle_options_write_command)
 	uint16_t user_options, boot_addr0, boot_addr1, options_mask;
 
 	if (CMD_ARGC < 1) {
-		command_print(CMD_CTX, "stm32f2x options_write <bank> ...");
+		command_print(CMD, "stm32f2x options_write <bank> ...");
 		return ERROR_COMMAND_SYNTAX_ERROR;
 	}
 
 	retval = CALL_COMMAND_HANDLER(flash_command_get_bank, 0, &bank);
-	if (ERROR_OK != retval)
+	if (retval != ERROR_OK)
 		return retval;
 
 	retval = stm32x_read_options(bank);
-	if (ERROR_OK != retval)
+	if (retval != ERROR_OK)
 		return retval;
 
 	stm32x_info = bank->driver_priv;
 	if (stm32x_info->has_boot_addr) {
 		if (CMD_ARGC != 4) {
-			command_print(CMD_CTX, "stm32f2x options_write <bank> <user_options>"
+			command_print(CMD, "stm32f2x options_write <bank> <user_options>"
 				" <boot_addr0> <boot_addr1>");
 			return ERROR_COMMAND_SYNTAX_ERROR;
 		}
@@ -1625,7 +1641,7 @@ COMMAND_HANDLER(stm32f2x_handle_options_write_command)
 		stm32x_info->option_bytes.boot_addr = boot_addr0 | (((uint32_t) boot_addr1) << 16);
 	} else {
 		if (CMD_ARGC != 2) {
-			command_print(CMD_CTX, "stm32f2x options_write <bank> <user_options>");
+			command_print(CMD, "stm32f2x options_write <bank> <user_options>");
 			return ERROR_COMMAND_SYNTAX_ERROR;
 		}
 	}
@@ -1634,14 +1650,14 @@ COMMAND_HANDLER(stm32f2x_handle_options_write_command)
 	options_mask = !stm32x_info->has_extra_options ? ~0xfc :
 		~(((0xf00 << (stm32x_info->protection_bits - 12)) | 0xff) & 0xffc);
 	if (user_options & options_mask) {
-		command_print(CMD_CTX, "stm32f2x invalid user_options");
+		command_print(CMD, "stm32f2x invalid user_options");
 		return ERROR_COMMAND_ARGUMENT_INVALID;
 	}
 
 	stm32x_info->option_bytes.user_options = user_options;
 
 	if (stm32x_write_options(bank) != ERROR_OK) {
-		command_print(CMD_CTX, "stm32f2x failed to write options");
+		command_print(CMD, "stm32f2x failed to write options");
 		return ERROR_OK;
 	}
 
@@ -1649,7 +1665,7 @@ COMMAND_HANDLER(stm32f2x_handle_options_write_command)
 	/* ... and reprogramming of whole flash */
 	stm32x_info->probed = false;
 
-	command_print(CMD_CTX, "stm32f2x write options complete.\n"
+	command_print(CMD, "stm32f2x write options complete.\n"
 				"INFO: a reset or power cycle is required "
 				"for the new settings to take effect.");
 	return retval;
@@ -1663,50 +1679,50 @@ COMMAND_HANDLER(stm32f2x_handle_optcr2_write_command)
 	uint32_t optcr2_pcrop;
 
 	if (CMD_ARGC != 2) {
-		command_print(CMD_CTX, "stm32f2x optcr2_write <bank> <optcr2_value>");
+		command_print(CMD, "stm32f2x optcr2_write <bank> <optcr2_value>");
 		return ERROR_COMMAND_SYNTAX_ERROR;
 	}
 
 	retval = CALL_COMMAND_HANDLER(flash_command_get_bank, 0, &bank);
-	if (ERROR_OK != retval)
+	if (retval != ERROR_OK)
 		return retval;
 
 	stm32x_info = bank->driver_priv;
 	if (!stm32x_info->has_optcr2_pcrop) {
-		command_print(CMD_CTX, "no optcr2 register");
+		command_print(CMD, "no optcr2 register");
 		return ERROR_COMMAND_ARGUMENT_INVALID;
 	}
 
-	command_print(CMD_CTX, "INFO: To disable PCROP, set PCROP_RDP"
+	command_print(CMD, "INFO: To disable PCROP, set PCROP_RDP"
 				" with PCROPi bits STILL SET, then\nlock device and"
 				" finally unlock it. Clears PCROP and mass erases flash.");
 
 	retval = stm32x_read_options(bank);
-	if (ERROR_OK != retval)
+	if (retval != ERROR_OK)
 		return retval;
 
 	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[1], optcr2_pcrop);
 	stm32x_info->option_bytes.optcr2_pcrop = optcr2_pcrop;
 
 	if (stm32x_write_options(bank) != ERROR_OK) {
-		command_print(CMD_CTX, "stm32f2x failed to write options");
+		command_print(CMD, "stm32f2x failed to write options");
 		return ERROR_OK;
 	}
 
-	command_print(CMD_CTX, "stm32f2x optcr2_write complete.");
+	command_print(CMD, "stm32f2x optcr2_write complete.");
 	return retval;
 }
 
 COMMAND_HANDLER(stm32x_handle_otp_command)
 {
 	if (CMD_ARGC < 2) {
-		command_print(CMD_CTX, "stm32x otp <bank> (enable|disable|show)");
+		command_print(CMD, "stm32x otp <bank> (enable|disable|show)");
 		return ERROR_COMMAND_SYNTAX_ERROR;
 	}
 
 	struct flash_bank *bank;
 	int retval = CALL_COMMAND_HANDLER(flash_command_get_bank, 0, &bank);
-	if (ERROR_OK != retval)
+	if (retval != ERROR_OK)
 		return retval;
 	if (stm32x_is_otp(bank)) {
 		if (strcmp(CMD_ARGV[1], "enable") == 0) {
@@ -1714,21 +1730,21 @@ COMMAND_HANDLER(stm32x_handle_otp_command)
 		} else if (strcmp(CMD_ARGV[1], "disable") == 0) {
 			stm32x_otp_disable(bank);
 		} else if (strcmp(CMD_ARGV[1], "show") == 0) {
-			command_print(CMD_CTX,
-				"OTP memory bank #%d is %s for write commands.",
+			command_print(CMD,
+				"OTP memory bank #%u is %s for write commands.",
 				bank->bank_number,
 				stm32x_is_otp_unlocked(bank) ? "enabled" : "disabled");
 		} else {
 			return ERROR_COMMAND_SYNTAX_ERROR;
 		}
 	} else {
-		command_print(CMD_CTX, "Failed: not an OTP bank.");
+		command_print(CMD, "Failed: not an OTP bank.");
 	}
 
 	return retval;
 }
 
-static const struct command_registration stm32x_exec_command_handlers[] = {
+static const struct command_registration stm32f2x_exec_command_handlers[] = {
 	{
 		.name = "lock",
 		.handler = stm32x_handle_lock_command,
@@ -1781,20 +1797,20 @@ static const struct command_registration stm32x_exec_command_handlers[] = {
 	COMMAND_REGISTRATION_DONE
 };
 
-static const struct command_registration stm32x_command_handlers[] = {
+static const struct command_registration stm32f2x_command_handlers[] = {
 	{
 		.name = "stm32f2x",
 		.mode = COMMAND_ANY,
 		.help = "stm32f2x flash command group",
 		.usage = "",
-		.chain = stm32x_exec_command_handlers,
+		.chain = stm32f2x_exec_command_handlers,
 	},
 	COMMAND_REGISTRATION_DONE
 };
 
 const struct flash_driver stm32f2x_flash = {
 	.name = "stm32f2x",
-	.commands = stm32x_command_handlers,
+	.commands = stm32f2x_command_handlers,
 	.flash_bank_command = stm32x_flash_bank_command,
 	.erase = stm32x_erase,
 	.protect = stm32x_protect,

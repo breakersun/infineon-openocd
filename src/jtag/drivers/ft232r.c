@@ -1,19 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+
 /***************************************************************************
  *   Copyright (C) 2010 Serge Vakulenko                                    *
  *   serge@vak.ru                                                          *
- *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
- *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 2 of the License, or     *
- *   (at your option) any later version.                                   *
- *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
- *   GNU General Public License for more details.                          *
- *                                                                         *
- *   You should have received a copy of the GNU General Public License     *
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -26,10 +15,11 @@
 #endif
 
 /* project specific includes */
+#include <jtag/adapter.h>
 #include <jtag/interface.h>
 #include <jtag/commands.h>
 #include <helper/time_support.h>
-#include "libusb1_common.h"
+#include "libusb_helper.h"
 
 /* system includes */
 #include <string.h>
@@ -68,10 +58,9 @@
 
 #define FT232R_BUF_SIZE_EXTRA	4096
 
-static char *ft232r_serial_desc;
 static uint16_t ft232r_vid = 0x0403; /* FTDI */
 static uint16_t ft232r_pid = 0x6001; /* FT232R */
-static jtag_libusb_device_handle *adapter;
+static struct libusb_device_handle *adapter;
 
 static uint8_t *ft232r_output;
 static size_t ft232r_output_len;
@@ -132,11 +121,11 @@ static int ft232r_send_recv(void)
 			bytes_to_write = rxfifo_free;
 
 		if (bytes_to_write) {
-			int n = jtag_libusb_bulk_write(adapter, IN_EP,
-				(char *) ft232r_output + total_written,
-				bytes_to_write, 1000);
+			int n;
 
-			if (n == 0) {
+			if (jtag_libusb_bulk_write(adapter, IN_EP,
+						   (char *) ft232r_output + total_written,
+						   bytes_to_write, 1000, &n) != ERROR_OK) {
 				LOG_ERROR("usb bulk write failed");
 				return ERROR_JTAG_DEVICE_ERROR;
 			}
@@ -147,12 +136,10 @@ static int ft232r_send_recv(void)
 
 		/* Read */
 		uint8_t reply[64];
+		int n;
 
-		int n = jtag_libusb_bulk_read(adapter, OUT_EP,
-			(char *) reply,
-			sizeof(reply), 1000);
-
-		if (n == 0) {
+		if (jtag_libusb_bulk_read(adapter, OUT_EP, (char *) reply,
+					  sizeof(reply), 1000, &n) != ERROR_OK) {
 			LOG_ERROR("usb bulk read failed");
 			return ERROR_JTAG_DEVICE_ERROR;
 		}
@@ -172,13 +159,13 @@ static int ft232r_send_recv(void)
 	return ERROR_OK;
 }
 
-void ft232r_increase_buf_size(size_t new_buf_size)
+static void ft232r_increase_buf_size(size_t new_buf_size)
 {
 	uint8_t *new_buf_ptr;
 	if (new_buf_size >= ft232r_buf_size) {
 		new_buf_size += FT232R_BUF_SIZE_EXTRA;
 		new_buf_ptr = realloc(ft232r_output, new_buf_size);
-		if (new_buf_ptr != NULL) {
+		if (new_buf_ptr) {
 			ft232r_output = new_buf_ptr;
 			ft232r_buf_size = new_buf_size;
 		}
@@ -259,9 +246,10 @@ static int ft232r_init(void)
 {
 	uint16_t avids[] = {ft232r_vid, 0};
 	uint16_t apids[] = {ft232r_pid, 0};
-	if (jtag_libusb_open(avids, apids, ft232r_serial_desc, &adapter)) {
+	if (jtag_libusb_open(avids, apids, &adapter, NULL)) {
+		const char *ft232r_serial_desc = adapter_get_required_serial();
 		LOG_ERROR("ft232r not found: vid=%04x, pid=%04x, serial=%s\n",
-			ft232r_vid, ft232r_pid, (ft232r_serial_desc == NULL) ? "[any]" : ft232r_serial_desc);
+			ft232r_vid, ft232r_pid, (!ft232r_serial_desc) ? "[any]" : ft232r_serial_desc);
 		return ERROR_JTAG_INIT_FAILED;
 	}
 
@@ -270,7 +258,7 @@ static int ft232r_init(void)
 	else /* serial port will be restored after jtag: */
 		libusb_set_auto_detach_kernel_driver(adapter, 1); /* 1: DONT_DETACH_SIO_MODULE */
 
-	if (jtag_libusb_claim_interface(adapter, 0)) {
+	if (libusb_claim_interface(adapter, 0)) {
 		LOG_ERROR("unable to claim interface");
 		return ERROR_JTAG_INIT_FAILED;
 	}
@@ -312,7 +300,7 @@ static int ft232r_init(void)
 	}
 
 	ft232r_output = malloc(ft232r_buf_size);
-	if (ft232r_output == NULL) {
+	if (!ft232r_output) {
 		LOG_ERROR("Unable to allocate memory for the buffer");
 		return ERROR_JTAG_INIT_FAILED;
 	}
@@ -332,7 +320,7 @@ static int ft232r_quit(void)
 		}
 	}
 
-	if (jtag_libusb_release_interface(adapter, 0) != 0)
+	if (libusb_release_interface(adapter, 0) != 0)
 		LOG_ERROR("usb release interface failed");
 
 	jtag_libusb_close(adapter);
@@ -397,16 +385,6 @@ static int ft232r_bit_name_to_number(const char *name)
 	return -1;
 }
 
-COMMAND_HANDLER(ft232r_handle_serial_desc_command)
-{
-	if (CMD_ARGC == 1)
-		ft232r_serial_desc = strdup(CMD_ARGV[0]);
-	else
-		LOG_ERROR("require exactly one argument to "
-				  "ft232r_serial_desc <serial>");
-	return ERROR_OK;
-}
-
 COMMAND_HANDLER(ft232r_handle_vid_pid_command)
 {
 	if (CMD_ARGC > 2) {
@@ -442,7 +420,7 @@ COMMAND_HANDLER(ft232r_handle_jtag_nums_command)
 	if (tdo_gpio < 0)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
-	command_print(CMD_CTX,
+	command_print(CMD,
 			"FT232R nums: TCK = %d %s, TMS = %d %s, TDI = %d %s, TDO = %d %s",
 			tck_gpio, ft232r_bit_number_to_name(tck_gpio),
 			tms_gpio, ft232r_bit_number_to_name(tms_gpio),
@@ -462,7 +440,7 @@ COMMAND_HANDLER(ft232r_handle_tck_num_command)
 	if (tck_gpio < 0)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
-	command_print(CMD_CTX,
+	command_print(CMD,
 			"FT232R num: TCK = %d %s", tck_gpio, ft232r_bit_number_to_name(tck_gpio));
 
 	return ERROR_OK;
@@ -478,7 +456,7 @@ COMMAND_HANDLER(ft232r_handle_tms_num_command)
 	if (tms_gpio < 0)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
-	command_print(CMD_CTX,
+	command_print(CMD,
 			"FT232R num: TMS = %d %s", tms_gpio, ft232r_bit_number_to_name(tms_gpio));
 
 	return ERROR_OK;
@@ -494,7 +472,7 @@ COMMAND_HANDLER(ft232r_handle_tdo_num_command)
 	if (tdo_gpio < 0)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
-	command_print(CMD_CTX,
+	command_print(CMD,
 			"FT232R num: TDO = %d %s", tdo_gpio, ft232r_bit_number_to_name(tdo_gpio));
 
 	return ERROR_OK;
@@ -510,7 +488,7 @@ COMMAND_HANDLER(ft232r_handle_tdi_num_command)
 	if (tdi_gpio < 0)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
-	command_print(CMD_CTX,
+	command_print(CMD,
 			"FT232R num: TDI = %d %s", tdi_gpio, ft232r_bit_number_to_name(tdi_gpio));
 
 	return ERROR_OK;
@@ -526,7 +504,7 @@ COMMAND_HANDLER(ft232r_handle_trst_num_command)
 	if (ntrst_gpio < 0)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
-	command_print(CMD_CTX,
+	command_print(CMD,
 			"FT232R num: TRST = %d %s", ntrst_gpio, ft232r_bit_number_to_name(ntrst_gpio));
 
 	return ERROR_OK;
@@ -542,7 +520,7 @@ COMMAND_HANDLER(ft232r_handle_srst_num_command)
 	if (nsysrst_gpio < 0)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
-	command_print(CMD_CTX,
+	command_print(CMD,
 			"FT232R num: SRST = %d %s", nsysrst_gpio, ft232r_bit_number_to_name(nsysrst_gpio));
 
 	return ERROR_OK;
@@ -555,83 +533,87 @@ COMMAND_HANDLER(ft232r_handle_restore_serial_command)
 	else if (CMD_ARGC != 0)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
-	command_print(CMD_CTX,
+	command_print(CMD,
 			"FT232R restore serial: 0x%04X (%s)",
 			ft232r_restore_bitmode, ft232r_restore_bitmode == 0xFFFF ? "disabled" : "enabled");
 
 	return ERROR_OK;
 }
 
-static const struct command_registration ft232r_command_handlers[] = {
+static const struct command_registration ft232r_subcommand_handlers[] = {
 	{
-		.name = "ft232r_serial_desc",
-		.handler = ft232r_handle_serial_desc_command,
-		.mode = COMMAND_CONFIG,
-		.help = "USB serial descriptor of the adapter",
-		.usage = "serial string",
-	},
-	{
-		.name = "ft232r_vid_pid",
+		.name = "vid_pid",
 		.handler = ft232r_handle_vid_pid_command,
 		.mode = COMMAND_CONFIG,
 		.help = "USB VID and PID of the adapter",
 		.usage = "vid pid",
 	},
 	{
-		.name = "ft232r_jtag_nums",
+		.name = "jtag_nums",
 		.handler = ft232r_handle_jtag_nums_command,
 		.mode = COMMAND_CONFIG,
 		.help = "gpio numbers for tck, tms, tdi, tdo. (in that order)",
 		.usage = "<0-7|TXD-RI> <0-7|TXD-RI> <0-7|TXD-RI> <0-7|TXD-RI>",
 	},
 	{
-		.name = "ft232r_tck_num",
+		.name = "tck_num",
 		.handler = ft232r_handle_tck_num_command,
 		.mode = COMMAND_CONFIG,
 		.help = "gpio number for tck.",
 		.usage = "<0-7|TXD|RXD|RTS|CTS|DTR|DSR|DCD|RI>",
 	},
 	{
-		.name = "ft232r_tms_num",
+		.name = "tms_num",
 		.handler = ft232r_handle_tms_num_command,
 		.mode = COMMAND_CONFIG,
 		.help = "gpio number for tms.",
 		.usage = "<0-7|TXD|RXD|RTS|CTS|DTR|DSR|DCD|RI>",
 	},
 	{
-		.name = "ft232r_tdo_num",
+		.name = "tdo_num",
 		.handler = ft232r_handle_tdo_num_command,
 		.mode = COMMAND_CONFIG,
 		.help = "gpio number for tdo.",
 		.usage = "<0-7|TXD|RXD|RTS|CTS|DTR|DSR|DCD|RI>",
 	},
 	{
-		.name = "ft232r_tdi_num",
+		.name = "tdi_num",
 		.handler = ft232r_handle_tdi_num_command,
 		.mode = COMMAND_CONFIG,
 		.help = "gpio number for tdi.",
 		.usage = "<0-7|TXD|RXD|RTS|CTS|DTR|DSR|DCD|RI>",
 	},
 	{
-		.name = "ft232r_srst_num",
+		.name = "srst_num",
 		.handler = ft232r_handle_srst_num_command,
 		.mode = COMMAND_CONFIG,
 		.help = "gpio number for srst.",
 		.usage = "<0-7|TXD|RXD|RTS|CTS|DTR|DSR|DCD|RI>",
 	},
 	{
-		.name = "ft232r_trst_num",
+		.name = "trst_num",
 		.handler = ft232r_handle_trst_num_command,
 		.mode = COMMAND_CONFIG,
 		.help = "gpio number for trst.",
 		.usage = "<0-7|TXD|RXD|RTS|CTS|DTR|DSR|DCD|RI>",
 	},
 	{
-		.name = "ft232r_restore_serial",
+		.name = "restore_serial",
 		.handler = ft232r_handle_restore_serial_command,
 		.mode = COMMAND_CONFIG,
 		.help = "bitmode control word that restores serial port.",
 		.usage = "bitmode_control_word",
+	},
+	COMMAND_REGISTRATION_DONE
+};
+
+static const struct command_registration ft232r_command_handlers[] = {
+	{
+		.name = "ft232r",
+		.mode = COMMAND_ANY,
+		.help = "perform ft232r management",
+		.chain = ft232r_subcommand_handlers,
+		.usage = "",
 	},
 	COMMAND_REGISTRATION_DONE
 };
@@ -675,7 +657,7 @@ static int syncbb_execute_tms(struct jtag_command *cmd)
 	unsigned num_bits = cmd->cmd.tms->num_bits;
 	const uint8_t *bits = cmd->cmd.tms->bits;
 
-	DEBUG_JTAG_IO("TMS: %d bits", num_bits);
+	LOG_DEBUG_IO("TMS: %d bits", num_bits);
 
 	int tms = 0;
 	for (unsigned i = 0; i < num_bits; i++) {
@@ -888,12 +870,11 @@ static int syncbb_execute_queue(void)
 				syncbb_scan(cmd->cmd.scan->ir_scan, type, buffer, scan_size);
 				if (jtag_read_buffer(buffer, cmd->cmd.scan) != ERROR_OK)
 					retval = ERROR_JTAG_QUEUE_FAILED;
-				if (buffer)
-					free(buffer);
+				free(buffer);
 				break;
 
 			case JTAG_SLEEP:
-				LOG_DEBUG_IO("sleep %" PRIi32, cmd->cmd.sleep->us);
+				LOG_DEBUG_IO("sleep %" PRIu32, cmd->cmd.sleep->us);
 
 				jtag_sleep(cmd->cmd.sleep->us);
 				break;
@@ -914,17 +895,21 @@ static int syncbb_execute_queue(void)
 	return retval;
 }
 
-struct jtag_interface ft232r_interface = {
-	.name = "ft232r",
-	.commands = ft232r_command_handlers,
-	.transports = jtag_only,
+static struct jtag_interface ft232r_interface = {
 	.supported = DEBUG_CAP_TMS_SEQ,
-
 	.execute_queue = syncbb_execute_queue,
+};
 
-	.speed = ft232r_speed,
+struct adapter_driver ft232r_adapter_driver = {
+	.name = "ft232r",
+	.transports = jtag_only,
+	.commands = ft232r_command_handlers,
+
 	.init = ft232r_init,
 	.quit = ft232r_quit,
-	.speed_div = ft232r_speed_div,
+	.speed = ft232r_speed,
 	.khz = ft232r_khz,
+	.speed_div = ft232r_speed_div,
+
+	.jtag_ops = &ft232r_interface,
 };

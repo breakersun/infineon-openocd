@@ -1,20 +1,9 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+
 /***************************************************************************
  *   Copyright (C) 2017 by Grzegorz Kostka, kostka.grzegorz@gmail.com      *
  *                                                                         *
  *   Based on bcm2835gpio.c                                                 *
- *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
- *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 2 of the License, or     *
- *   (at your option) any later version.                                   *
- *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
- *   GNU General Public License for more details.                          *
- *                                                                         *
- *   You should have received a copy of the GNU General Public License     *
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -22,6 +11,7 @@
 #endif
 
 #include <jtag/interface.h>
+#include <transport/transport.h>
 #include "bitbang.h"
 
 #include <sys/mman.h>
@@ -84,10 +74,10 @@ static inline bool gpio_level(int g)
 
 static bb_value_t imx_gpio_read(void);
 static int imx_gpio_write(int tck, int tms, int tdi);
-static int imx_gpio_reset(int trst, int srst);
 
 static int imx_gpio_swdio_read(void);
 static void imx_gpio_swdio_drive(bool is_output);
+static int imx_gpio_swd_write(int swclk, int swdio);
 
 static int imx_gpio_init(void);
 static int imx_gpio_quit(void);
@@ -95,9 +85,9 @@ static int imx_gpio_quit(void);
 static struct bitbang_interface imx_gpio_bitbang = {
 	.read = imx_gpio_read,
 	.write = imx_gpio_write,
-	.reset = imx_gpio_reset,
 	.swdio_read = imx_gpio_swdio_read,
 	.swdio_drive = imx_gpio_swdio_drive,
+	.swd_write = imx_gpio_swd_write,
 	.blink = NULL
 };
 
@@ -145,10 +135,10 @@ static int imx_gpio_write(int tck, int tms, int tdi)
 	return ERROR_OK;
 }
 
-static int imx_gpio_swd_write(int tck, int tms, int tdi)
+static int imx_gpio_swd_write(int swclk, int swdio)
 {
-	tdi ? gpio_set(swdio_gpio) : gpio_clear(swdio_gpio);
-	tck ? gpio_set(swclk_gpio) : gpio_clear(swclk_gpio);
+	swdio ? gpio_set(swdio_gpio) : gpio_clear(swdio_gpio);
+	swclk ? gpio_set(swclk_gpio) : gpio_clear(swclk_gpio);
 
 	for (unsigned int i = 0; i < jtag_delay; i++)
 		asm volatile ("");
@@ -221,7 +211,7 @@ COMMAND_HANDLER(imx_gpio_handle_jtag_gpionums)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 	}
 
-	command_print(CMD_CTX,
+	command_print(CMD,
 			"imx_gpio GPIO config: tck = %d, tms = %d, tdi = %d, tdo = %d",
 			tck_gpio, tms_gpio, tdi_gpio, tdo_gpio);
 
@@ -233,7 +223,7 @@ COMMAND_HANDLER(imx_gpio_handle_jtag_gpionum_tck)
 	if (CMD_ARGC == 1)
 		COMMAND_PARSE_NUMBER(int, CMD_ARGV[0], tck_gpio);
 
-	command_print(CMD_CTX, "imx_gpio GPIO config: tck = %d", tck_gpio);
+	command_print(CMD, "imx_gpio GPIO config: tck = %d", tck_gpio);
 	return ERROR_OK;
 }
 
@@ -242,7 +232,7 @@ COMMAND_HANDLER(imx_gpio_handle_jtag_gpionum_tms)
 	if (CMD_ARGC == 1)
 		COMMAND_PARSE_NUMBER(int, CMD_ARGV[0], tms_gpio);
 
-	command_print(CMD_CTX, "imx_gpio GPIO config: tms = %d", tms_gpio);
+	command_print(CMD, "imx_gpio GPIO config: tms = %d", tms_gpio);
 	return ERROR_OK;
 }
 
@@ -251,7 +241,7 @@ COMMAND_HANDLER(imx_gpio_handle_jtag_gpionum_tdo)
 	if (CMD_ARGC == 1)
 		COMMAND_PARSE_NUMBER(int, CMD_ARGV[0], tdo_gpio);
 
-	command_print(CMD_CTX, "imx_gpio GPIO config: tdo = %d", tdo_gpio);
+	command_print(CMD, "imx_gpio GPIO config: tdo = %d", tdo_gpio);
 	return ERROR_OK;
 }
 
@@ -260,7 +250,7 @@ COMMAND_HANDLER(imx_gpio_handle_jtag_gpionum_tdi)
 	if (CMD_ARGC == 1)
 		COMMAND_PARSE_NUMBER(int, CMD_ARGV[0], tdi_gpio);
 
-	command_print(CMD_CTX, "imx_gpio GPIO config: tdi = %d", tdi_gpio);
+	command_print(CMD, "imx_gpio GPIO config: tdi = %d", tdi_gpio);
 	return ERROR_OK;
 }
 
@@ -269,7 +259,7 @@ COMMAND_HANDLER(imx_gpio_handle_jtag_gpionum_srst)
 	if (CMD_ARGC == 1)
 		COMMAND_PARSE_NUMBER(int, CMD_ARGV[0], srst_gpio);
 
-	command_print(CMD_CTX, "imx_gpio GPIO config: srst = %d", srst_gpio);
+	command_print(CMD, "imx_gpio GPIO config: srst = %d", srst_gpio);
 	return ERROR_OK;
 }
 
@@ -278,7 +268,7 @@ COMMAND_HANDLER(imx_gpio_handle_jtag_gpionum_trst)
 	if (CMD_ARGC == 1)
 		COMMAND_PARSE_NUMBER(int, CMD_ARGV[0], trst_gpio);
 
-	command_print(CMD_CTX, "imx_gpio GPIO config: trst = %d", trst_gpio);
+	command_print(CMD, "imx_gpio GPIO config: trst = %d", trst_gpio);
 	return ERROR_OK;
 }
 
@@ -291,7 +281,7 @@ COMMAND_HANDLER(imx_gpio_handle_swd_gpionums)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 	}
 
-	command_print(CMD_CTX,
+	command_print(CMD,
 			"imx_gpio GPIO nums: swclk = %d, swdio = %d",
 			swclk_gpio, swdio_gpio);
 
@@ -303,7 +293,7 @@ COMMAND_HANDLER(imx_gpio_handle_swd_gpionum_swclk)
 	if (CMD_ARGC == 1)
 		COMMAND_PARSE_NUMBER(int, CMD_ARGV[0], swclk_gpio);
 
-	command_print(CMD_CTX, "imx_gpio num: swclk = %d", swclk_gpio);
+	command_print(CMD, "imx_gpio num: swclk = %d", swclk_gpio);
 	return ERROR_OK;
 }
 
@@ -312,7 +302,7 @@ COMMAND_HANDLER(imx_gpio_handle_swd_gpionum_swdio)
 	if (CMD_ARGC == 1)
 		COMMAND_PARSE_NUMBER(int, CMD_ARGV[0], swdio_gpio);
 
-	command_print(CMD_CTX, "imx_gpio num: swdio = %d", swdio_gpio);
+	command_print(CMD, "imx_gpio num: swdio = %d", swdio_gpio);
 	return ERROR_OK;
 }
 
@@ -323,7 +313,7 @@ COMMAND_HANDLER(imx_gpio_handle_speed_coeffs)
 		COMMAND_PARSE_NUMBER(int, CMD_ARGV[1], speed_offset);
 	}
 
-	command_print(CMD_CTX, "imx_gpio: speed_coeffs = %d, speed_offset = %d",
+	command_print(CMD, "imx_gpio: speed_coeffs = %d, speed_offset = %d",
 				  speed_coeff, speed_offset);
 	return ERROR_OK;
 }
@@ -333,7 +323,7 @@ COMMAND_HANDLER(imx_gpio_handle_peripheral_base)
 	if (CMD_ARGC == 1)
 		COMMAND_PARSE_NUMBER(u32, CMD_ARGV[0], imx_gpio_peri_base);
 
-	command_print(CMD_CTX, "imx_gpio: peripheral_base = 0x%08x",
+	command_print(CMD, "imx_gpio: peripheral_base = 0x%08x",
 				  imx_gpio_peri_base);
 	return ERROR_OK;
 }
@@ -429,18 +419,25 @@ static const struct command_registration imx_gpio_command_handlers[] = {
 
 static const char * const imx_gpio_transports[] = { "jtag", "swd", NULL };
 
-struct jtag_interface imx_gpio_interface = {
-	.name = "imx_gpio",
+static struct jtag_interface imx_gpio_interface = {
 	.supported = DEBUG_CAP_TMS_SEQ,
 	.execute_queue = bitbang_execute_queue,
+};
+
+struct adapter_driver imx_gpio_adapter_driver = {
+	.name = "imx_gpio",
 	.transports = imx_gpio_transports,
-	.swd = &bitbang_swd,
+	.commands = imx_gpio_command_handlers,
+
+	.init = imx_gpio_init,
+	.quit = imx_gpio_quit,
+	.reset = imx_gpio_reset,
 	.speed = imx_gpio_speed,
 	.khz = imx_gpio_khz,
 	.speed_div = imx_gpio_speed_div,
-	.commands = imx_gpio_command_handlers,
-	.init = imx_gpio_init,
-	.quit = imx_gpio_quit,
+
+	.jtag_ops = &imx_gpio_interface,
+	.swd_ops = &bitbang_swd,
 };
 
 static bool imx_gpio_jtag_mode_possible(void)
@@ -471,24 +468,21 @@ static int imx_gpio_init(void)
 
 	LOG_INFO("imx_gpio GPIO JTAG/SWD bitbang driver");
 
-	if (imx_gpio_jtag_mode_possible()) {
-		if (imx_gpio_swd_mode_possible())
-			LOG_INFO("JTAG and SWD modes enabled");
-		else
-			LOG_INFO("JTAG only mode enabled (specify swclk and swdio gpio to add SWD mode)");
-	} else if (imx_gpio_swd_mode_possible()) {
-		LOG_INFO("SWD only mode enabled (specify tck, tms, tdi and tdo gpios to add JTAG mode)");
-	} else {
-		LOG_ERROR("Require tck, tms, tdi and tdo gpios for JTAG mode and/or swclk and swdio gpio for SWD mode");
+	if (transport_is_jtag() && !imx_gpio_jtag_mode_possible()) {
+		LOG_ERROR("Require tck, tms, tdi and tdo gpios for JTAG mode");
+		return ERROR_JTAG_INIT_FAILED;
+	}
+
+	if (transport_is_swd() && !imx_gpio_swd_mode_possible()) {
+		LOG_ERROR("Require swclk and swdio gpio for SWD mode");
 		return ERROR_JTAG_INIT_FAILED;
 	}
 
 	dev_mem_fd = open("/dev/mem", O_RDWR | O_SYNC);
 	if (dev_mem_fd < 0) {
-		perror("open");
+		LOG_ERROR("open: %s", strerror(errno));
 		return ERROR_JTAG_INIT_FAILED;
 	}
-
 
 	LOG_INFO("imx_gpio mmap: pagesize: %u, regionsize: %u",
 			(unsigned int) sysconf(_SC_PAGE_SIZE), IMX_GPIO_REGS_COUNT * IMX_GPIO_SIZE);
@@ -497,7 +491,7 @@ static int imx_gpio_init(void)
 				MAP_SHARED, dev_mem_fd, imx_gpio_peri_base);
 
 	if (pio_base == MAP_FAILED) {
-		perror("mmap");
+		LOG_ERROR("mmap: %s", strerror(errno));
 		close(dev_mem_fd);
 		return ERROR_JTAG_INIT_FAILED;
 	}
@@ -506,7 +500,7 @@ static int imx_gpio_init(void)
 	 * Configure TDO as an input, and TDI, TCK, TMS, TRST, SRST
 	 * as outputs.  Drive TDI and TCK low, and TMS/TRST/SRST high.
 	 */
-	if (imx_gpio_jtag_mode_possible()) {
+	if (transport_is_jtag()) {
 		tdo_gpio_mode = gpio_mode_get(tdo_gpio);
 		tdi_gpio_mode = gpio_mode_get(tdi_gpio);
 		tck_gpio_mode = gpio_mode_get(tck_gpio);
@@ -520,8 +514,15 @@ static int imx_gpio_init(void)
 		gpio_mode_output_set(tdi_gpio);
 		gpio_mode_output_set(tck_gpio);
 		gpio_mode_output_set(tms_gpio);
+
+		if (trst_gpio != -1) {
+			trst_gpio_mode = gpio_mode_get(trst_gpio);
+			gpio_set(trst_gpio);
+			gpio_mode_output_set(trst_gpio);
+		}
 	}
-	if (imx_gpio_swd_mode_possible()) {
+
+	if (transport_is_swd()) {
 		swclk_gpio_mode = gpio_mode_get(swclk_gpio);
 		swdio_gpio_mode = gpio_mode_get(swdio_gpio);
 
@@ -530,11 +531,7 @@ static int imx_gpio_init(void)
 		gpio_mode_output_set(swclk_gpio);
 		gpio_mode_output_set(swdio_gpio);
 	}
-	if (trst_gpio != -1) {
-		trst_gpio_mode = gpio_mode_get(trst_gpio);
-		gpio_set(trst_gpio);
-		gpio_mode_output_set(trst_gpio);
-	}
+
 	if (srst_gpio != -1) {
 		srst_gpio_mode = gpio_mode_get(srst_gpio);
 		gpio_set(srst_gpio);
@@ -545,28 +542,26 @@ static int imx_gpio_init(void)
 		  "tdo %d trst %d srst %d", tck_gpio_mode, tms_gpio_mode,
 		  tdi_gpio_mode, tdo_gpio_mode, trst_gpio_mode, srst_gpio_mode);
 
-	if (swd_mode) {
-		imx_gpio_bitbang.write = imx_gpio_swd_write;
-		bitbang_switch_to_swd();
-	}
-
 	return ERROR_OK;
 }
 
 static int imx_gpio_quit(void)
 {
-	if (imx_gpio_jtag_mode_possible()) {
+	if (transport_is_jtag()) {
 		gpio_mode_set(tdo_gpio, tdo_gpio_mode);
 		gpio_mode_set(tdi_gpio, tdi_gpio_mode);
 		gpio_mode_set(tck_gpio, tck_gpio_mode);
 		gpio_mode_set(tms_gpio, tms_gpio_mode);
+
+		if (trst_gpio != -1)
+			gpio_mode_set(trst_gpio, trst_gpio_mode);
 	}
-	if (imx_gpio_swd_mode_possible()) {
+
+	if (transport_is_swd()) {
 		gpio_mode_set(swclk_gpio, swclk_gpio_mode);
 		gpio_mode_set(swdio_gpio, swdio_gpio_mode);
 	}
-	if (trst_gpio != -1)
-		gpio_mode_set(trst_gpio, trst_gpio_mode);
+
 	if (srst_gpio != -1)
 		gpio_mode_set(srst_gpio, srst_gpio_mode);
 

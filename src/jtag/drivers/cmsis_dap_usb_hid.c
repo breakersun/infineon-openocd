@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /***************************************************************************
  *   Copyright (C) 2018 by Mickaël Thomas                                  *
@@ -147,6 +147,9 @@ static int cmsis_dap_hid_open(struct cmsis_dap *dap, uint16_t vids[], uint16_t p
 		packet_size = 512;
 
 	dap->bdata->dev_handle = dev;
+
+	dap->vid = target_vid;
+	dap->pid = target_pid;
 
 	int retval = cmsis_dap_hid_alloc(dap, packet_size);
 	if (retval != ERROR_OK) {

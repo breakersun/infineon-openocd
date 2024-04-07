@@ -1,22 +1,11 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+
 /***************************************************************************
  *   Copyright (C) 2004, 2005 by Dominic Rath                              *
  *   Dominic.Rath@gmx.de                                                   *
  *                                                                         *
  *   Copyright (C) 2007,2008 Øyvind Harboe                                 *
  *   oyvind.harboe@zylin.com                                               *
- *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
- *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 2 of the License, or     *
- *   (at your option) any later version.                                   *
- *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
- *   GNU General Public License for more details.                          *
- *                                                                         *
- *   You should have received a copy of the GNU General Public License     *
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifndef OPENOCD_HELPER_TYPES_H
@@ -47,16 +36,10 @@
 #ifndef __cplusplus
 
 #define false	0
-#define true		1
+#define true	1
 
-typedef int _Bool;
-#else
-typedef bool _Bool;
 #endif	/* __cplusplus */
 #endif	/* HAVE__BOOL */
-
-#define bool _Bool
-
 #endif	/* HAVE_STDBOOL_H */
 
 /// turns a macro argument into a string constant
@@ -126,17 +109,17 @@ static inline uint64_t le_to_h_u64(const uint8_t *buf)
 			  (uint64_t)buf[7] << 56);
 }
 
-static inline uint32_t le_to_h_u32(const uint8_t* buf)
+static inline uint32_t le_to_h_u32(const uint8_t *buf)
 {
 	return (uint32_t)((uint32_t)buf[0] | (uint32_t)buf[1] << 8 | (uint32_t)buf[2] << 16 | (uint32_t)buf[3] << 24);
 }
 
-static inline uint32_t le_to_h_u24(const uint8_t* buf)
+static inline uint32_t le_to_h_u24(const uint8_t *buf)
 {
 	return (uint32_t)((uint32_t)buf[0] | (uint32_t)buf[1] << 8 | (uint32_t)buf[2] << 16);
 }
 
-static inline uint16_t le_to_h_u16(const uint8_t* buf)
+static inline uint16_t le_to_h_u16(const uint8_t *buf)
 {
 	return (uint16_t)((uint16_t)buf[0] | (uint16_t)buf[1] << 8);
 }
@@ -153,17 +136,17 @@ static inline uint64_t be_to_h_u64(const uint8_t *buf)
 			  (uint64_t)buf[0] << 56);
 }
 
-static inline uint32_t be_to_h_u32(const uint8_t* buf)
+static inline uint32_t be_to_h_u32(const uint8_t *buf)
 {
 	return (uint32_t)((uint32_t)buf[3] | (uint32_t)buf[2] << 8 | (uint32_t)buf[1] << 16 | (uint32_t)buf[0] << 24);
 }
 
-static inline uint32_t be_to_h_u24(const uint8_t* buf)
+static inline uint32_t be_to_h_u24(const uint8_t *buf)
 {
 	return (uint32_t)((uint32_t)buf[2] | (uint32_t)buf[1] << 8 | (uint32_t)buf[0] << 16);
 }
 
-static inline uint16_t be_to_h_u16(const uint8_t* buf)
+static inline uint16_t be_to_h_u16(const uint8_t *buf)
 {
 	return (uint16_t)((uint16_t)buf[1] | (uint16_t)buf[0] << 8);
 }
@@ -192,7 +175,7 @@ static inline void h_u64_to_be(uint8_t *buf, int64_t val)
 	buf[7] = (uint8_t) (val >> 0);
 }
 
-static inline void h_u32_to_le(uint8_t* buf, int val)
+static inline void h_u32_to_le(uint8_t *buf, int val)
 {
 	buf[3] = (uint8_t) (val >> 24);
 	buf[2] = (uint8_t) (val >> 16);
@@ -200,7 +183,7 @@ static inline void h_u32_to_le(uint8_t* buf, int val)
 	buf[0] = (uint8_t) (val >> 0);
 }
 
-static inline void h_u32_to_be(uint8_t* buf, int val)
+static inline void h_u32_to_be(uint8_t *buf, int val)
 {
 	buf[0] = (uint8_t) (val >> 24);
 	buf[1] = (uint8_t) (val >> 16);
@@ -208,27 +191,27 @@ static inline void h_u32_to_be(uint8_t* buf, int val)
 	buf[3] = (uint8_t) (val >> 0);
 }
 
-static inline void h_u24_to_le(uint8_t* buf, int val)
+static inline void h_u24_to_le(uint8_t *buf, int val)
 {
 	buf[2] = (uint8_t) (val >> 16);
 	buf[1] = (uint8_t) (val >> 8);
 	buf[0] = (uint8_t) (val >> 0);
 }
 
-static inline void h_u24_to_be(uint8_t* buf, int val)
+static inline void h_u24_to_be(uint8_t *buf, int val)
 {
 	buf[0] = (uint8_t) (val >> 16);
 	buf[1] = (uint8_t) (val >> 8);
 	buf[2] = (uint8_t) (val >> 0);
 }
 
-static inline void h_u16_to_le(uint8_t* buf, int val)
+static inline void h_u16_to_le(uint8_t *buf, int val)
 {
 	buf[1] = (uint8_t) (val >> 8);
 	buf[0] = (uint8_t) (val >> 0);
 }
 
-static inline void h_u16_to_be(uint8_t* buf, int val)
+static inline void h_u16_to_be(uint8_t *buf, int val)
 {
 	buf[0] = (uint8_t) (val >> 8);
 	buf[1] = (uint8_t) (val >> 0);
@@ -349,7 +332,6 @@ typedef uint64_t uintmax_t;
 
 #endif
 
-#if BUILD_TARGET64
 typedef uint64_t target_addr_t;
 #define TARGET_ADDR_MAX UINT64_MAX
 #define TARGET_PRIdADDR PRId64
@@ -357,15 +339,6 @@ typedef uint64_t target_addr_t;
 #define TARGET_PRIoADDR PRIo64
 #define TARGET_PRIxADDR PRIx64
 #define TARGET_PRIXADDR PRIX64
-#else
-typedef uint32_t target_addr_t;
-#define TARGET_ADDR_MAX UINT32_MAX
-#define TARGET_PRIdADDR PRId32
-#define TARGET_PRIuADDR PRIu32
-#define TARGET_PRIoADDR PRIo32
-#define TARGET_PRIxADDR PRIx32
-#define TARGET_PRIXADDR PRIX32
-#endif
 #define TARGET_ADDR_FMT "0x%8.8" TARGET_PRIxADDR
 
 #endif /* OPENOCD_HELPER_TYPES_H */

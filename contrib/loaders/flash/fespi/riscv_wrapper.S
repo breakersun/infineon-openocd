@@ -1,5 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
-
 #if __riscv_xlen == 64
 # define LREG ld
 # define SREG sd

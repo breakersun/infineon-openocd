@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+
 /***************************************************************************
  *   Copyright (C) 2005 by Dominic Rath                                    *
  *   Dominic.Rath@gmx.de                                                   *
@@ -7,19 +9,6 @@
  *                                                                         *
  *   Copyright (C) 2008 by Spencer Oliver                                  *
  *   spen@spen-soft.co.uk                                                  *
- *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
- *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 2 of the License, or     *
- *   (at your option) any later version.                                   *
- *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
- *   GNU General Public License for more details.                          *
- *                                                                         *
- *   You should have received a copy of the GNU General Public License     *
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -27,6 +16,7 @@
 #endif
 
 #include "server.h"
+#include <helper/time_support.h>
 #include <target/target.h>
 #include <target/target_request.h>
 #include <target/openrisc/jsp_server.h>
@@ -76,7 +66,7 @@ static int add_connection(struct service *service, struct command_context *cmd_c
 	memset(&c->sin, 0, sizeof(c->sin));
 	c->cmd_ctx = copy_command_context(cmd_ctx);
 	c->service = service;
-	c->input_pending = 0;
+	c->input_pending = false;
 	c->priv = NULL;
 	c->next = NULL;
 
@@ -204,13 +194,8 @@ static void free_service(struct service *c)
 	free(c);
 }
 
-int add_service(char *name,
-	const char *port,
-	int max_connections,
-	new_connection_handler_t new_connection_handler,
-	input_handler_t input_handler,
-	connection_closed_handler_t connection_closed_handler,
-	void *priv)
+int add_service(const struct service_driver *driver, const char *port,
+		int max_connections, void *priv)
 {
 	struct service *c, **p;
 	struct hostent *hp;
@@ -218,14 +203,16 @@ int add_service(char *name,
 
 	c = malloc(sizeof(struct service));
 
-	c->name = strdup(name);
+	c->name = strdup(driver->name);
 	c->port = strdup(port);
 	c->max_connections = 1;	/* Only TCP/IP ports can support more than one connection */
 	c->fd = -1;
 	c->connections = NULL;
-	c->new_connection = new_connection_handler;
-	c->input = input_handler;
-	c->connection_closed = connection_closed_handler;
+	c->new_connection_during_keep_alive = driver->new_connection_during_keep_alive_handler;
+	c->new_connection = driver->new_connection_handler;
+	c->input = driver->input_handler;
+	c->connection_closed = driver->connection_closed_handler;
+	c->keep_client_alive = driver->keep_client_alive_handler;
 	c->priv = priv;
 	c->next = NULL;
 	long portnumber;
@@ -262,11 +249,11 @@ int add_service(char *name,
 		memset(&c->sin, 0, sizeof(c->sin));
 		c->sin.sin_family = AF_INET;
 
-		if (bindto_name == NULL)
+		if (!bindto_name)
 			c->sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 		else {
 			hp = gethostbyname(bindto_name);
-			if (hp == NULL) {
+			if (!hp) {
 				LOG_ERROR("couldn't resolve bindto address: %s", bindto_name);
 				close_socket(c->fd);
 				free_service(c);
@@ -277,7 +264,7 @@ int add_service(char *name,
 		c->sin.sin_port = htons(c->portnumber);
 
 		if (bind(c->fd, (struct sockaddr *)&c->sin, sizeof(c->sin)) == -1) {
-			LOG_ERROR("couldn't bind %s to socket on port %d: %s", name, c->portnumber, strerror(errno));
+			LOG_ERROR("couldn't bind %s to socket on port %d: %s", c->name, c->portnumber, strerror(errno));
 			close_socket(c->fd);
 			free_service(c);
 			return ERROR_FAIL;
@@ -308,7 +295,7 @@ int add_service(char *name,
 		socklen_t addr_in_size = sizeof(addr_in);
 		if (getsockname(c->fd, (struct sockaddr *)&addr_in, &addr_in_size) == 0)
 			LOG_INFO("Listening on port %hu for %s connections",
-				 ntohs(addr_in.sin_port), name);
+				 ntohs(addr_in.sin_port), c->name);
 	} else if (c->type == CONNECTION_STDINOUT) {
 		c->fd = fileno(stdin);
 
@@ -325,7 +312,7 @@ int add_service(char *name,
 #endif
 	} else if (c->type == CONNECTION_PIPE) {
 #ifdef _WIN32
-		/* we currenty do not support named pipes under win32
+		/* we currently do not support named pipes under win32
 		 * so exit openocd for now */
 		LOG_ERROR("Named pipes currently not supported under this os");
 		free_service(c);
@@ -403,19 +390,14 @@ static int remove_services(void)
 
 		remove_connections(c);
 
-		if (c->name)
-			free(c->name);
+		free(c->name);
 
 		if (c->type == CONNECTION_PIPE) {
 			if (c->fd != -1)
 				close(c->fd);
 		}
-		if (c->port)
-			free(c->port);
-
-		if (c->priv)
-			free(c->priv);
-
+		free(c->port);
+		free(c->priv);
 		/* delete service */
 		free(c);
 
@@ -426,6 +408,14 @@ static int remove_services(void)
 	services = NULL;
 
 	return ERROR_OK;
+}
+
+void server_keep_clients_alive(void)
+{
+	for (struct service *s = services; s; s = s->next)
+		if (s->keep_client_alive)
+			for (struct connection *c = s->connections; c; c = c->next)
+				s->keep_client_alive(c);
 }
 
 int server_loop(struct command_context *command_context)
@@ -440,6 +430,8 @@ int server_loop(struct command_context *command_context)
 
 	/* used in accept() */
 	int retval;
+
+	int64_t next_event = timeval_ms() + polling_period;
 
 #ifndef _WIN32
 	if (signal(SIGPIPE, SIG_IGN) == SIG_ERR)
@@ -482,12 +474,14 @@ int server_loop(struct command_context *command_context)
 			retval = socket_select(fd_max + 1, &read_fds, NULL, NULL, &tv);
 		} else {
 			/* Every 100ms, can be changed with "poll_period" command */
-			tv.tv_usec = polling_period * 1000;
+			int timeout_ms = next_event - timeval_ms();
+			if (timeout_ms < 0)
+				timeout_ms = 0;
+			else if (timeout_ms > polling_period)
+				timeout_ms = polling_period;
+			tv.tv_usec = timeout_ms * 1000;
 			/* Only while we're sleeping we'll let others run */
-			openocd_sleep_prelude();
-			kept_alive();
 			retval = socket_select(fd_max + 1, &read_fds, NULL, NULL, &tv);
-			openocd_sleep_postlude();
 		}
 
 		if (retval == -1) {
@@ -515,7 +509,8 @@ int server_loop(struct command_context *command_context)
 		if (retval == 0) {
 			/* We only execute these callbacks when there was nothing to do or we timed
 			 *out */
-			target_call_timer_callbacks();
+			target_call_timer_callbacks_now();
+			next_event = target_timer_next_event();
 			process_jim_events(command_context);
 
 			FD_ZERO(&read_fds);	/* eCos leaves read_fds unchanged in this case!  */
@@ -562,7 +557,7 @@ int server_loop(struct command_context *command_context)
 				struct connection *c;
 
 				for (c = service->connections; c; ) {
-					if ((FD_ISSET(c->fd, &read_fds)) || c->input_pending) {
+					if ((c->fd >= 0 && FD_ISSET(c->fd, &read_fds)) || c->input_pending) {
 						retval = service->input(c);
 						if (retval != ERROR_OK) {
 							struct connection *next = c->next;
@@ -600,7 +595,7 @@ int server_loop(struct command_context *command_context)
 	return shutdown_openocd == SHUTDOWN_WITH_ERROR_CODE ? ERROR_FAIL : ERROR_OK;
 }
 
-void sig_handler(int sig)
+static void sig_handler(int sig)
 {
 	/* store only first signal that hits us */
 	if (shutdown_openocd == CONTINUE_MAIN_LOOP) {
@@ -613,7 +608,7 @@ void sig_handler(int sig)
 
 
 #ifdef _WIN32
-BOOL WINAPI ControlHandler(DWORD dwCtrlType)
+BOOL WINAPI control_handler(DWORD ctrl_type)
 {
 	shutdown_openocd = SHUTDOWN_WITH_SIGNAL_CODE;
 	return TRUE;
@@ -631,25 +626,39 @@ static void sigkey_handler(int sig)
 #endif
 
 
-int server_preinit(void)
+int server_host_os_entry(void)
 {
 	/* this currently only calls WSAStartup on native win32 systems
 	 * before any socket operations are performed.
 	 * This is an issue if you call init in your config script */
 
 #ifdef _WIN32
-	WORD wVersionRequested;
-	WSADATA wsaData;
+	WORD version_requested;
+	WSADATA wsadata;
 
-	wVersionRequested = MAKEWORD(2, 2);
+	version_requested = MAKEWORD(2, 2);
 
-	if (WSAStartup(wVersionRequested, &wsaData) != 0) {
+	if (WSAStartup(version_requested, &wsadata) != 0) {
 		LOG_ERROR("Failed to Open Winsock");
 		return ERROR_FAIL;
 	}
+#endif
+	return ERROR_OK;
+}
 
+int server_host_os_close(void)
+{
+#ifdef _WIN32
+	WSACleanup();
+#endif
+	return ERROR_OK;
+}
+
+int server_preinit(void)
+{
+#ifdef _WIN32
 	/* register ctrl-c handler */
-	SetConsoleCtrlHandler(ControlHandler, TRUE);
+	SetConsoleCtrlHandler(control_handler, TRUE);
 
 	signal(SIGBREAK, sig_handler);
 	signal(SIGINT, sig_handler);
@@ -688,8 +697,7 @@ int server_quit(void)
 	target_quit();
 
 #ifdef _WIN32
-	WSACleanup();
-	SetConsoleCtrlHandler(ControlHandler, FALSE);
+	SetConsoleCtrlHandler(control_handler, FALSE);
 
 	return ERROR_OK;
 #endif
@@ -743,6 +751,8 @@ COMMAND_HANDLER(handle_shutdown_command)
 
 	shutdown_openocd = SHUTDOWN_REQUESTED;
 
+	command_run_line(CMD_CTX, "_run_pre_shutdown_commands");
+
 	if (CMD_ARGC == 1) {
 		if (!strcmp(CMD_ARGV[0], "error")) {
 			shutdown_openocd = SHUTDOWN_WITH_ERROR_CODE;
@@ -750,6 +760,19 @@ COMMAND_HANDLER(handle_shutdown_command)
 		}
 	}
 
+	return ERROR_COMMAND_CLOSE_CONNECTION;
+}
+
+
+COMMAND_HANDLER(handle_terminate_command)
+{
+	extern struct command_context *global_cmd_ctx;
+	extern void openocd_cleanup(struct command_context *cmd_ctx);
+
+	LOG_USER("terminate command invoked");
+	server_quit();
+	openocd_cleanup(global_cmd_ctx);
+	exit(0);
 	return ERROR_COMMAND_CLOSE_CONNECTION;
 }
 
@@ -769,7 +792,7 @@ COMMAND_HANDLER(handle_bindto_command)
 {
 	switch (CMD_ARGC) {
 		case 0:
-			command_print(CMD_CTX, "bindto name: %s", bindto_name);
+			command_print(CMD, "bindto name: %s", bindto_name);
 			break;
 		case 1:
 			free(bindto_name);
@@ -799,10 +822,17 @@ static const struct command_registration server_command_handlers[] = {
 	{
 		.name = "bindto",
 		.handler = &handle_bindto_command,
-		.mode = COMMAND_ANY,
+		.mode = COMMAND_CONFIG,
 		.usage = "[name]",
 		.help = "Specify address by name on which to listen for "
 			"incoming TCP/IP connections",
+	},
+	{
+		.name = "terminate",
+		.handler = &handle_terminate_command,
+		.mode = COMMAND_ANY,
+		.usage = "",
+		.help = "Terminates the openocd process",
 	},
 	COMMAND_REGISTRATION_DONE
 };
@@ -810,15 +840,15 @@ static const struct command_registration server_command_handlers[] = {
 int server_register_commands(struct command_context *cmd_ctx)
 {
 	int retval = telnet_register_commands(cmd_ctx);
-	if (ERROR_OK != retval)
+	if (retval != ERROR_OK)
 		return retval;
 
 	retval = tcl_register_commands(cmd_ctx);
-	if (ERROR_OK != retval)
+	if (retval != ERROR_OK)
 		return retval;
 
 	retval = jsp_register_commands(cmd_ctx);
-	if (ERROR_OK != retval)
+	if (retval != ERROR_OK)
 		return retval;
 
 	return register_commands(cmd_ctx, NULL, server_command_handlers);
@@ -828,7 +858,7 @@ COMMAND_HELPER(server_port_command, unsigned short *out)
 {
 	switch (CMD_ARGC) {
 		case 0:
-			command_print(CMD_CTX, "%d", *out);
+			command_print(CMD, "%d", *out);
 			break;
 		case 1:
 		{
@@ -847,7 +877,7 @@ COMMAND_HELPER(server_pipe_command, char **out)
 {
 	switch (CMD_ARGC) {
 		case 0:
-			command_print(CMD_CTX, "%s", *out);
+			command_print(CMD, "%s", *out);
 			break;
 		case 1:
 		{

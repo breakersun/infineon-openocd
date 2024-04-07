@@ -1,8 +1,11 @@
 /***************************************************************************
  *                                                                         *
  *   Copyright (C) 2019 by Bohdan Tymkiv, Mykola Tuzyak                    *
- *   bohdan.tymkiv@cypress.com bohdan200@gmail.com                         *
- *   mykola.tyzyak@cypress.com                                             *
+ *   bohdan.tymkiv@infineon.com bohdan200@gmail.com                        *
+ *   mykola.tyzyak@infineon.com                                            *
+ *                                                                         *
+ *   Copyright (C) <2019-2021>                                             *
+ *     <Cypress Semiconductor Corporation (an Infineon company)>           *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -30,25 +33,28 @@
 
 struct mxs40_regs {
 	uint32_t variant;
-	uint32_t spcif_geometry;
 	uint32_t ipc_acquire;
-	uint32_t ipc_release;
 	uint32_t ipc_notify;
 	uint32_t ipc_data;
 	uint32_t ipc_lock_stat;
 	uint32_t ipc_intr;
-	uint32_t vtbase[4];
-	uint32_t mem_base_main[6];
-	uint32_t mem_base_work[6];
-	uint32_t mem_base_sflash[6];
-	uint32_t mem_base_efuses[6];
+	uint32_t ipc_intr_msk;
+	uint32_t ppu_flush;
+	uint32_t vtbase[3];
+	uint32_t mem_base_main[8];
+	uint32_t mem_base_work[2];
+	uint32_t mem_base_sflash[2];
 };
 
 #define MXS40_VARIANT_PSOC6_BLE2            1
 #define MXS40_VARIANT_PSOC6A_2M             2
-#define MXS40_VARIANT_TRAVEO_II             3
-#define MXS40_VARIANT_TRAVEO_II_8M          4
+#define MXS40_VARIANT_MACAW                 3
+#define MXS40_VARIANT_TRAVEO_II             4
+#define MXS40_VARIANT_TRAVEO_II_8M          5
 
+#define IPC_INTR_MASK_1_CORE                (0x02u << 16u)
+#define IPC_INTR_MASK_2_CORE                (0x04u << 16u)
+#define IPC_INTR_MASK_3_CORE                (0x08u << 16u)
 
 #define SROMAPI_SIID_REQ                    0x00000001u
 #define SROMAPI_SIID_REQ_FAMILY_REVISION    (SROMAPI_SIID_REQ | 0x000u)
@@ -56,6 +62,7 @@ struct mxs40_regs {
 #define SROMAPI_WRITEROW_REQ                0x05000100u
 #define SROMAPI_PROGRAMROW_REQ              0x06000100u
 #define SROMAPI_ERASESECTOR_REQ             0x14000100u
+#define SROMAPI_BLANK_CHECK_REQ             0x2A000000u
 #define SROMAPI_ERASEALL_REQ                0x0A000100u
 #define SROMAPI_ERASEROW_REQ                0x1C000100u
 #define SROMAPI_READ_FUSE_BYTE              0x03000001u
@@ -70,6 +77,8 @@ struct mxs40_regs {
 #define SROMAPI_DATA_LOCATION_MSK           0x00000001u
 //MYKT#define IPC_TIMEOUT_MS                      1500
 #define IPC_TIMEOUT_MS                      20000
+#define CM0_VTOR_TIMEOUT_MS                 600
+#define OTHER_VTOR_TIMEOUT_MS               10000
 
 #define MXS40_CHIP_PROT_UNKNOWN             0x00u
 #define MXS40_CHIP_PROT_VIRGIN              0x01u
@@ -85,9 +94,11 @@ struct mxs40_regs {
 extern const struct mxs40_regs psoc6_ble2_regs;
 /* PSoC6A2M registers */
 extern const struct mxs40_regs psoc6_2m_regs;
-/* Traveo-II registers */
+/* Macaw registers */
+extern const struct mxs40_regs macaw_regs;
+/* TRAVEO™II registers */
 extern const struct mxs40_regs traveo2_regs;
-/* Traveo-II 8M registers */
+/* TRAVEO™II 8M registers */
 extern const struct mxs40_regs traveo2_8m_regs;
 
 enum reset_halt_mode {
@@ -106,6 +117,7 @@ enum mxs40_die {
 	die_traveo2_2m = 0x104u, /* TraveoII B-E-2M  | 0x104     | E600-E6FF   */
 	die_psoc6_512k = 0x105u, /* PSoC6A-512K      | 0x105     | E700-E7FF   */
 	die_traveo2_cl = 0x106u, /* TraveoII Cluster | 0x106     | E800-E8FF   */
+	die_macaw      = 0x109u, /* Macaw            | 0x109     | EA40-EA7F   */
 	die_unknown    = 0xFFFu  /* Unknown or onsupported                     */
 };
 
@@ -119,14 +131,26 @@ struct efuse_regions {
 	uint32_t    secure_access_size;
 } ;
 
+struct sflash_region {
+	uint32_t addr;
+	uint32_t size;
+	uint8_t flags;
+};
+
 struct mxs40_bank_info {
+	bool is_probed;
+	bool ppu_read_protected;
+	bool has_erase_subsector_bug;
 	uint32_t size_override;
 	uint32_t page_size;
-	bool is_probed;
-	const uint8_t *program_algo_p;
 	size_t program_algo_size;
+	size_t erase_algo_size;
+	const uint8_t *program_algo_p;
+	const uint8_t *erase_algo_p;
 	const struct mxs40_regs *regs;
 	const struct efuse_regions *efuse_regions;
+	const struct sflash_region *sflash_regions;
+	int (*prepare_function) (struct flash_bank *bank);
 };
 
 struct timeout {
@@ -134,13 +158,10 @@ struct timeout {
 	long timeout_ms;
 };
 
-struct row_region {
-	target_addr_t addr;
-	uint32_t size;
-	uint32_t restrictions;
-};
-
 extern const struct command_registration mxs40_exec_command_handlers[];
+extern const struct command_registration macaw_exec_command_handlers[];
+
+typedef size_t (*erase_builder)(struct flash_bank *bank, int first, int last, uint32_t *address_buffer);
 
 /** ***********************************************************************************************
  * @brief Initializes `struct timeout` structure with given timeout value
@@ -202,10 +223,23 @@ void mxs40_sromalgo_release(struct target *target);
  * @param bank current flash bank
  * @param req_and_params requect id of the function to invoke
  * @param working_area address of memory buffer in target's memory space for SROM API parameters
+ * @param check_errors true if error check and reporting should be performed
  * @param data_out pointer to variable which will be populated with execution status
  * @return ERROR_OK in case of success, ERROR_XXX code otherwise
  *************************************************************************************************/
-int mxs40_call_sromapi(struct flash_bank *bank, uint32_t req_and_params, uint32_t working_area, uint32_t *data_out);
+int mxs40_call_sromapi_inner(struct flash_bank *bank, uint32_t req_and_params, uint32_t working_area,
+                             bool check_errors, uint32_t *data_out);
+/** ***********************************************************************************************
+ * @brief Invokes SROM API functions which are responsible for Flash operations
+ *
+ * @param bank current flash bank
+ * @param req_and_params requect id of the function to invoke
+ * @param working_area address of memory buffer in target's memory space for SROM API parameters
+ * @param data_out pointer to variable which will be populated with execution status
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
+int mxs40_call_sromapi(struct flash_bank *bank, uint32_t req_and_params, uint32_t working_area,
+    uint32_t *data_out);
 
 /** ***********************************************************************************************
  * @brief Retrieves SiliconID and Protection status of the target device
@@ -230,6 +264,7 @@ int mxs40_get_silicon_id(struct flash_bank *bank, uint32_t *si_id, uint8_t *prot
  *        TraveoII B-E-2M  | 0x104     | E600-E6FF
  *        PSoC6A-512K      | 0x105     | E700-E7FF
  *        TraveoII Cluster | 0x106     | E800-E8FF
+ *        Macaw            | 0x109     | EA40-EA7F
  * @param silicon_id Silicon ID of the following format:
  *  [31:24]       | [23:16]       | [15:12]       | [11:8]        | [7:0]
  *  Silicon Id Hi | Silicon ID Lo | Major Rev. Id | Minor Rev. Id | Family Id Lo
@@ -249,7 +284,7 @@ int mxs40_protect_check(struct flash_bank *bank);
  * @brief Dummy function, device does not support flash bank protection
  * @return ERROR_OK always
  *************************************************************************************************/
-int mxs40_protect(struct flash_bank *bank, int set, int first, int last);
+int mxs40_protect(struct flash_bank *bank, int set, unsigned int first, unsigned int last);
 
 /** ***********************************************************************************************
  * @brief MXS40 patform_get_info Displays human-readable information about acquired device
@@ -258,7 +293,7 @@ int mxs40_protect(struct flash_bank *bank, int set, int first, int last);
  * @param buf_size size of the buffer
  * @return ERROR_OK in case of success, ERROR_XXX code otherwise
  *************************************************************************************************/
-int mxs40_get_info(struct flash_bank *bank, char *buf, int buf_size);
+int mxs40_get_info(struct flash_bank *bank, struct command_invocation *cmd);
 
 /** ***********************************************************************************************
  * @brief Probes target device only if it hasn't been probed yet
@@ -285,6 +320,30 @@ int mxs40_erase_sflash(struct flash_bank *bank, int first, int last);
  * @return ERROR_OK in case of success, ERROR_XXX code otherwise
  *************************************************************************************************/
 int mxs40_erase_row(struct flash_bank *bank, uint32_t addr, bool erase_sector);
+
+/** ***********************************************************************************************
+ * @brief Performs Erase operation using asynchronous flash algorithm
+ * @param bank current flash bank
+ * @param first first sector to erase
+ * @param last last sector to erase
+ * @param erase_builder_p pointer to erase_builder function
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
+int mxs40_erase_with_algo(struct flash_bank *bank, int first, int last, erase_builder erase_builder_p);
+
+/** ***********************************************************************************************
+ * @brief Programs single Flash Row
+ * @param bank current flash bank
+ * @param addr address of the flash row
+ * @param buffer pointer to the buffer with data
+ * @param use_writerow true if current flash bank belongs to Supervisory Flash
+ * @param data_size - size of data to be programmed
+ *   0 – 1 byte     1 - 2 bytes    2 - 4 bytes     3 – 8 bytes     4 – 16 bytes
+ *   5 – 32 bytes   6 – 64 bytes   7 - 128 bytes   8 - 256 bytes   9 - 512 bytes
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
+int mxs40_program_row_inner(struct flash_bank *bank, uint32_t addr, const uint8_t *buffer,
+							bool use_writerow, uint8_t data_size);
 
 /** ***********************************************************************************************
  * @brief Programs single Flash Row
@@ -317,13 +376,6 @@ int mxs40_program(struct flash_bank *bank, const uint8_t *buffer, uint32_t offse
 int mxs40_program_with_algo(struct flash_bank *bank, const uint8_t *buffer, uint32_t offset, uint32_t count);
 
 /** ***********************************************************************************************
- * @brief Performs initial setup of the Traveo-II target
- * @param bank The flash bank
- * @return ERROR_OK in case of success, ERROR_XXX code otherwise
- *************************************************************************************************/
-int mxs40_traveo_setup(struct flash_bank *bank);
-
-/** ***********************************************************************************************
  * @brief Performs Erase operation. Corrently not supported.
  *
  * @param bank current flash bank
@@ -331,7 +383,7 @@ int mxs40_traveo_setup(struct flash_bank *bank);
  * @param last last sector to erase
  * @return ERROR_OK in case of success, ERROR_XXX code otherwise
  *************************************************************************************************/
-int efuse_erase(struct flash_bank *bank, int first, int last);
+int efuse_erase(struct flash_bank *bank, unsigned int first, unsigned int last);
 
 /** ***********************************************************************************************
  * @brief Programs EFuse region
@@ -370,5 +422,11 @@ int efuse_probe(struct flash_bank *bank);
  * @param bank - the bank being destroyed
  *************************************************************************************************/
 void mxs40_free_driver_priv(struct flash_bank *bank);
+
+/** ***********************************************************************************************
+ * @brief Prepares T2G devices for executing SROM calls
+ * @param bank - the flash bank
+ *************************************************************************************************/
+int traveo2_prepare(struct flash_bank *bank);
 
 #endif //#ifndef MXS40_H

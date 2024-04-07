@@ -1,36 +1,32 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+
 /***************************************************************************
  *   Copyright (C) 2009-2010 by David Brownell                             *
- *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
- *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 2 of the License, or     *
- *   (at your option) any later version.                                   *
- *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
- *   GNU General Public License for more details.                          *
- *                                                                         *
- *   You should have received a copy of the GNU General Public License     *
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifndef OPENOCD_JTAG_SWD_H
 #define OPENOCD_JTAG_SWD_H
 
+#include <helper/log.h>
 #include <target/arm_adi_v5.h>
 
 /* Bits in SWD command packets, written from host to target
  * first bit on the wire is START
  */
 #define SWD_CMD_START	(1 << 0)	/* always set */
-#define SWD_CMD_APnDP	(1 << 1)	/* set only for AP access */
-#define SWD_CMD_RnW	(1 << 2)		/* set only for read access */
+#define SWD_CMD_APNDP	(1 << 1)	/* set only for AP access */
+#define SWD_CMD_RNW	(1 << 2)		/* set only for read access */
 #define SWD_CMD_A32	(3 << 3)		/* bits A[3:2] of register addr */
 #define SWD_CMD_PARITY	(1 << 5)	/* parity of APnDP|RnW|A32 */
 #define SWD_CMD_STOP	(0 << 6)	/* always clear for synch SWD */
 #define SWD_CMD_PARK	(1 << 7)	/* driven high by host */
 /* followed by TRN, 3-bits of ACK, TRN */
+
+/*
+ * The SWD subsystem error codes
+ */
+#define ERROR_SWD_FAIL	(-400)	/** protocol or parity error */
+#define ERROR_SWD_FAULT	(-401)	/** device returned FAULT in ACK field */
 
 /**
  * Construct a "cmd" byte, in lSB bit order, which swd_driver.read_reg()
@@ -38,8 +34,8 @@
  */
 static inline uint8_t swd_cmd(bool is_read, bool is_ap, uint8_t regnum)
 {
-	uint8_t cmd = (is_ap ? SWD_CMD_APnDP : 0)
-		| (is_read ? SWD_CMD_RnW : 0)
+	uint8_t cmd = (is_ap ? SWD_CMD_APNDP : 0)
+		| (is_read ? SWD_CMD_RNW : 0)
 		| ((regnum & 0xc) << 1);
 
 	/* 8 cmd bits 4:1 may be set */
@@ -52,6 +48,40 @@ static inline uint8_t swd_cmd(bool is_read, bool is_ap, uint8_t regnum)
 }
 
 /* SWD_ACK_* bits are defined in <target/arm_adi_v5.h> */
+
+/**
+ * Test if we can rely on ACK returned by SWD command
+ *
+ * @param cmd Byte constructed by swd_cmd(), START, STOP and TRN are filtered off
+ * @returns true if ACK should be checked, false if should be ignored
+ */
+static inline bool swd_cmd_returns_ack(uint8_t cmd)
+{
+	uint8_t base_cmd = cmd & (SWD_CMD_APNDP | SWD_CMD_RNW | SWD_CMD_A32);
+
+	/* DPv2 does not reply to DP_TARGETSEL write cmd */
+	return base_cmd != swd_cmd(false, false, DP_TARGETSEL);
+}
+
+/**
+ * Convert SWD ACK value returned from DP to OpenOCD error code
+ *
+ * @param ack
+ * @returns error code
+ */
+static inline int swd_ack_to_error_code(uint8_t ack)
+{
+	switch (ack) {
+	case SWD_ACK_OK:
+		return ERROR_OK;
+	case SWD_ACK_WAIT:
+		return ERROR_WAIT;
+	case SWD_ACK_FAULT:
+		return ERROR_SWD_FAULT;
+	default:
+		return ERROR_SWD_FAIL;
+	}
+}
 
 /*
  * The following sequences are updated to
@@ -213,14 +243,6 @@ static const uint8_t swd_seq_dormant_to_jtag[] = {
 };
 static const unsigned swd_seq_dormant_to_jtag_len = 160;
 
-enum swd_special_seq {
-	LINE_RESET,
-	JTAG_TO_SWD,
-	SWD_TO_JTAG,
-	SWD_TO_DORMANT,
-	DORMANT_TO_SWD,
-};
-
 struct swd_driver {
 	/**
 	 * Initialize the debug link so it can perform SWD operations.
@@ -231,24 +253,6 @@ struct swd_driver {
 	 * @return ERROR_OK on success, else a negative fault code.
 	 */
 	int (*init)(void);
-
-	/**
-	 * Set the SWCLK frequency of the SWD link.
-	 *
-	 * The driver should round the desired value, downwards if possible, to
-	 * the nearest supported frequency. A negative value should be ignored
-	 * and can be used to query the current setting. If the driver does not
-	 * support a variable frequency a fixed, nominal, value should be
-	 * returned.
-	 *
-	 * If the frequency is increased, it must not apply before the currently
-	 * queued transactions are executed. If the frequency is lowered, it may
-	 * apply immediately.
-	 *
-	 * @param hz The desired frequency in Hz.
-	 * @return The actual resulting frequency after rounding.
-	 */
-	int_least32_t (*frequency)(int_least32_t hz);
 
 	/**
 	 * Queue a special SWDIO sequence.
@@ -303,6 +307,5 @@ struct swd_driver {
 };
 
 int swd_init_reset(struct command_context *cmd_ctx);
-void swd_add_reset(int req_srst);
 
 #endif /* OPENOCD_JTAG_SWD_H */

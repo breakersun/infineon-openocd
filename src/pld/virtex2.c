@@ -1,19 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+
 /***************************************************************************
  *   Copyright (C) 2006 by Dominic Rath                                    *
  *   Dominic.Rath@gmx.de                                                   *
- *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
- *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 2 of the License, or     *
- *   (at your option) any later version.                                   *
- *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
- *   GNU General Public License for more details.                          *
- *                                                                         *
- *   You should have received a copy of the GNU General Public License     *
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -26,7 +15,7 @@
 
 static int virtex2_set_instr(struct jtag_tap *tap, uint32_t new_instr)
 {
-	if (tap == NULL)
+	if (!tap)
 		return ERROR_FAIL;
 
 	if (buf_get_u32(tap->cur_instr, 0, tap->ir_length) != new_instr) {
@@ -183,13 +172,13 @@ COMMAND_HANDLER(virtex2_handle_read_stat_command)
 	COMMAND_PARSE_NUMBER(uint, CMD_ARGV[0], dev_id);
 	device = get_pld_device_by_num(dev_id);
 	if (!device) {
-		command_print(CMD_CTX, "pld device '#%s' is out of bounds", CMD_ARGV[0]);
+		command_print(CMD, "pld device '#%s' is out of bounds", CMD_ARGV[0]);
 		return ERROR_OK;
 	}
 
 	virtex2_read_stat(device, &status);
 
-	command_print(CMD_CTX, "virtex2 status register: 0x%8.8" PRIx32 "", status);
+	command_print(CMD, "virtex2 status register: 0x%8.8" PRIx32 "", status);
 
 	return ERROR_OK;
 }
@@ -204,8 +193,8 @@ PLD_DEVICE_COMMAND_HANDLER(virtex2_pld_device_command)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
 	tap = jtag_tap_by_string(CMD_ARGV[1]);
-	if (tap == NULL) {
-		command_print(CMD_CTX, "Tap: %s does not exist", CMD_ARGV[1]);
+	if (!tap) {
+		command_print(CMD, "Tap: %s does not exist", CMD_ARGV[1]);
 		return ERROR_OK;
 	}
 

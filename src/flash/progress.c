@@ -1,5 +1,7 @@
+#include <string.h>
+
 #include "progress.h"
-#include "log.h"
+#include "helper/log.h"
 
 #define MAX_BAR_WIDTH   32
 static char sbuf[MAX_BAR_WIDTH + 1];
@@ -9,13 +11,17 @@ static size_t total_size;
 
 static const char *progress_str[] = {
 	"Erasing    ",
-	"Programming"
+	"Programming",
+	"Verifying  ",
+	"Blank Check",
 };
 
 
 void progress_init(size_t total, enum progress_type type)
 {
-	op_type = progress_str[type];
+	if(!op_type)
+		op_type = progress_str[type];
+
 	total_size = total;
 	prev_bar_width = 0;
 }

@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+
 /***************************************************************************
  *   Copyright (C) 2008 by Spencer Oliver                                  *
  *   spen@spen-soft.co.uk                                                  *
@@ -5,19 +7,6 @@
  *   Copyright (C) 2008 by David T.L. Wong                                 *
  *                                                                         *
  *   Copyright (C) 2009 by David N. Claffey <dnclaffey@gmail.com>          *
- *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
- *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 2 of the License, or     *
- *   (at your option) any later version.                                   *
- *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
- *   GNU General Public License for more details.                          *
- *                                                                         *
- *   You should have received a copy of the GNU General Public License     *
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -27,10 +16,12 @@
 #include "mips32.h"
 #include "mips_ejtag.h"
 #include "mips32_dmaacc.h"
+#include "mips64.h"
+#include "mips64_pracc.h"
 
 void mips_ejtag_set_instr(struct mips_ejtag *ejtag_info, uint32_t new_instr)
 {
-	assert(ejtag_info->tap != NULL);
+	assert(ejtag_info->tap);
 	struct jtag_tap *tap = ejtag_info->tap;
 
 	if (buf_get_u32(tap->cur_instr, 0, tap->ir_length) != new_instr) {
@@ -38,7 +29,7 @@ void mips_ejtag_set_instr(struct mips_ejtag *ejtag_info, uint32_t new_instr)
 		struct scan_field field;
 		field.num_bits = tap->ir_length;
 
-		uint8_t t[4];
+		uint8_t t[4] = { 0 };
 		field.out_value = t;
 		buf_set_u32(t, 0, field.num_bits, new_instr);
 
@@ -56,7 +47,7 @@ int mips_ejtag_get_idcode(struct mips_ejtag *ejtag_info)
 	return mips_ejtag_drscan_32(ejtag_info, &ejtag_info->idcode);
 }
 
-int mips_ejtag_get_impcode(struct mips_ejtag *ejtag_info)
+static int mips_ejtag_get_impcode(struct mips_ejtag *ejtag_info)
 {
 	mips_ejtag_set_instr(ejtag_info, EJTAG_INST_IMPCODE);
 
@@ -66,7 +57,7 @@ int mips_ejtag_get_impcode(struct mips_ejtag *ejtag_info)
 
 void mips_ejtag_add_scan_96(struct mips_ejtag *ejtag_info, uint32_t ctrl, uint32_t data, uint8_t *in_scan_buf)
 {
-	assert(ejtag_info->tap != NULL);
+	assert(ejtag_info->tap);
 	struct jtag_tap *tap = ejtag_info->tap;
 
 	struct scan_field field;
@@ -87,15 +78,46 @@ void mips_ejtag_add_scan_96(struct mips_ejtag *ejtag_info, uint32_t ctrl, uint32
 	keep_alive();
 }
 
-void mips_ejtag_drscan_32_queued(struct mips_ejtag *ejtag_info, uint32_t data_out, uint8_t *data_in)
+int mips_ejtag_drscan_64(struct mips_ejtag *ejtag_info, uint64_t *data)
 {
-	assert(ejtag_info->tap != NULL);
+	struct jtag_tap *tap;
+	tap  = ejtag_info->tap;
+
+	if (!tap)
+		return ERROR_FAIL;
+	struct scan_field field;
+	uint8_t t[8] = { 0 }, r[8];
+	int retval;
+
+	field.num_bits = 64;
+	field.out_value = t;
+	buf_set_u64(t, 0, field.num_bits, *data);
+	field.in_value = r;
+
+	jtag_add_dr_scan(tap, 1, &field, TAP_IDLE);
+	retval = jtag_execute_queue();
+	if (retval != ERROR_OK) {
+		LOG_ERROR("register read failed");
+		return retval;
+	}
+
+	*data = buf_get_u64(field.in_value, 0, 64);
+
+	keep_alive();
+
+	return ERROR_OK;
+}
+
+static void mips_ejtag_drscan_32_queued(struct mips_ejtag *ejtag_info,
+		uint32_t data_out, uint8_t *data_in)
+{
+	assert(ejtag_info->tap);
 	struct jtag_tap *tap = ejtag_info->tap;
 
 	struct scan_field field;
 	field.num_bits = 32;
 
-	uint8_t scan_out[4];
+	uint8_t scan_out[4] = { 0 };
 	field.out_value = scan_out;
 	buf_set_u32(scan_out, 0, field.num_bits, data_out);
 
@@ -127,7 +149,7 @@ void mips_ejtag_drscan_32_out(struct mips_ejtag *ejtag_info, uint32_t data)
 
 int mips_ejtag_drscan_8(struct mips_ejtag *ejtag_info, uint8_t *data)
 {
-	assert(ejtag_info->tap != NULL);
+	assert(ejtag_info->tap);
 	struct jtag_tap *tap = ejtag_info->tap;
 
 	struct scan_field field;
@@ -148,7 +170,7 @@ int mips_ejtag_drscan_8(struct mips_ejtag *ejtag_info, uint8_t *data)
 
 void mips_ejtag_drscan_8_out(struct mips_ejtag *ejtag_info, uint8_t data)
 {
-	assert(ejtag_info->tap != NULL);
+	assert(ejtag_info->tap);
 	struct jtag_tap *tap = ejtag_info->tap;
 
 	struct scan_field field;
@@ -235,7 +257,7 @@ error:
 
 int mips_ejtag_exit_debug(struct mips_ejtag *ejtag_info)
 {
-	pa_list pracc_list = {.instr = MIPS32_DRET(ejtag_info->isa), .addr = 0};
+	struct pa_list pracc_list = {.instr = MIPS32_DRET(ejtag_info->isa), .addr = 0};
 	struct pracc_queue_info ctx = {.max_code = 1, .pracc_list = &pracc_list, .code_count = 1, .store_count = 0};
 
 	/* execute our dret instruction */
@@ -246,7 +268,7 @@ int mips_ejtag_exit_debug(struct mips_ejtag *ejtag_info)
 	return ctx.retval;
 }
 
-/* mips_ejtag_init_mmr - asign Memory-Mapped Registers depending
+/* mips_ejtag_init_mmr - assign Memory-Mapped Registers depending
  *			on EJTAG version.
  */
 static void mips_ejtag_init_mmr(struct mips_ejtag *ejtag_info)
@@ -263,8 +285,8 @@ static void mips_ejtag_init_mmr(struct mips_ejtag *ejtag_info)
 		ejtag_info->ejtag_dbm_offs	= EJTAG_V20_DBM_OFFS;
 		ejtag_info->ejtag_dbv_offs	= EJTAG_V20_DBV_OFFS;
 
-		ejtag_info->ejtag_iba_step_size	= EJTAG_V20_IBAn_STEP;
-		ejtag_info->ejtag_dba_step_size	= EJTAG_V20_DBAn_STEP;
+		ejtag_info->ejtag_iba_step_size	= EJTAG_V20_IBAN_STEP;
+		ejtag_info->ejtag_dba_step_size	= EJTAG_V20_DBAN_STEP;
 	} else {
 		ejtag_info->ejtag_ibs_addr	= EJTAG_V25_IBS;
 		ejtag_info->ejtag_iba0_addr	= EJTAG_V25_IBA0;
@@ -279,8 +301,8 @@ static void mips_ejtag_init_mmr(struct mips_ejtag *ejtag_info)
 		ejtag_info->ejtag_dbc_offs	= EJTAG_V25_DBC_OFFS;
 		ejtag_info->ejtag_dbv_offs	= EJTAG_V25_DBV_OFFS;
 
-		ejtag_info->ejtag_iba_step_size	= EJTAG_V25_IBAn_STEP;
-		ejtag_info->ejtag_dba_step_size	= EJTAG_V25_DBAn_STEP;
+		ejtag_info->ejtag_iba_step_size	= EJTAG_V25_IBAN_STEP;
+		ejtag_info->ejtag_dba_step_size	= EJTAG_V25_DBAN_STEP;
 	}
 }
 
@@ -314,7 +336,7 @@ static void ejtag_main_print_imp(struct mips_ejtag *ejtag_info)
 		EJTAG_IMP_HAS(EJTAG_IMP_ASID6) ? " ASID_6" : "",
 		EJTAG_IMP_HAS(EJTAG_IMP_MIPS16) ? " MIPS16" : "",
 		EJTAG_IMP_HAS(EJTAG_IMP_NODMA) ? " noDMA" : " DMA",
-		EJTAG_IMP_HAS(EJTAG_DCR_MIPS64) ? " MIPS64" : " MIPS32");
+		EJTAG_IMP_HAS(EJTAG_IMP_MIPS64) ? " MIPS64" : " MIPS32");
 
 	switch (ejtag_info->ejtag_version) {
 		case EJTAG_VERSION_20:
@@ -388,7 +410,7 @@ int mips_ejtag_init(struct mips_ejtag *ejtag_info)
 
 int mips_ejtag_fastdata_scan(struct mips_ejtag *ejtag_info, int write_t, uint32_t *data)
 {
-	assert(ejtag_info->tap != NULL);
+	assert(ejtag_info->tap);
 	struct jtag_tap *tap = ejtag_info->tap;
 
 	struct scan_field fields[2];
@@ -418,6 +440,111 @@ int mips_ejtag_fastdata_scan(struct mips_ejtag *ejtag_info, int write_t, uint32_
 		jtag_add_callback(mips_le_to_h_u32,
 			(jtag_callback_data_t) data);
 
+	keep_alive();
+
+	return ERROR_OK;
+}
+
+int mips64_ejtag_config_step(struct mips_ejtag *ejtag_info, bool enable_step)
+{
+	const uint32_t code_enable[] = {
+		MIPS64_MTC0(1, 31, 0),		    /* move $1 to COP0 DeSave */
+		MIPS64_MFC0(1, 23, 0),		    /* move COP0 Debug to $1 */
+		MIPS64_ORI(1, 1, 0x0100),		 /* set SSt bit in debug reg */
+		MIPS64_MTC0(1, 23, 0),		    /* move $1 to COP0 Debug */
+		MIPS64_B(NEG16(5)),
+		MIPS64_MFC0(1, 31, 0),		    /* move COP0 DeSave to $1 */
+		MIPS64_NOP,
+		MIPS64_NOP,
+		MIPS64_NOP,
+		MIPS64_NOP,
+		MIPS64_NOP,
+		MIPS64_NOP,
+		MIPS64_NOP,
+		MIPS64_NOP,
+	};
+
+	const uint32_t code_disable[] = {
+		MIPS64_MTC0(15, 31, 0),                           /* move $15 to COP0 DeSave */
+		MIPS64_LUI(15, UPPER16(MIPS64_PRACC_STACK)),     /* $15 = MIPS64_PRACC_STACK */
+		MIPS64_ORI(15, 15, LOWER16(MIPS64_PRACC_STACK)),
+		MIPS64_SD(1, 0, 15),                              /* sw $1,($15) */
+		MIPS64_SD(2, 0, 15),                              /* sw $2,($15) */
+		MIPS64_MFC0(1, 23, 0),                            /* move COP0 Debug to $1 */
+		MIPS64_LUI(2, 0xFFFF),                           /* $2 = 0xfffffeff */
+		MIPS64_ORI(2, 2, 0xFEFF),
+		MIPS64_AND(1, 1, 2),
+		MIPS64_MTC0(1, 23, 0),                            /* move $1 to COP0 Debug */
+		MIPS64_LD(2, 0, 15),
+		MIPS64_LD(1, 0, 15),
+		MIPS64_SYNC,
+		MIPS64_B(NEG16(14)),
+		MIPS64_MFC0(15, 31, 0),                           /* move COP0 DeSave to $15 */
+		MIPS64_NOP,
+		MIPS64_NOP,
+		MIPS64_NOP,
+		MIPS64_NOP,
+		MIPS64_NOP,
+		MIPS64_NOP,
+		MIPS64_NOP,
+		MIPS64_NOP,
+	};
+	const uint32_t *code = enable_step ? code_enable : code_disable;
+	unsigned code_len = enable_step ? ARRAY_SIZE(code_enable) :
+					  ARRAY_SIZE(code_disable);
+
+	return mips64_pracc_exec(ejtag_info,
+				 code_len, code, 0, NULL, 0, NULL);
+}
+
+int mips64_ejtag_exit_debug(struct mips_ejtag *ejtag_info)
+{
+	const uint32_t code[] = {
+		MIPS64_DRET,
+		MIPS64_NOP,
+		MIPS64_NOP,
+		MIPS64_NOP,
+		MIPS64_NOP,
+		MIPS64_NOP,
+		MIPS64_NOP,
+		MIPS64_NOP,
+	};
+	LOG_DEBUG("enter mips64_pracc_exec");
+	return mips64_pracc_exec(ejtag_info,
+				 ARRAY_SIZE(code), code, 0, NULL, 0, NULL);
+}
+
+int mips64_ejtag_fastdata_scan(struct mips_ejtag *ejtag_info, bool write_t, uint64_t *data)
+{
+	struct jtag_tap *tap;
+
+	tap = ejtag_info->tap;
+	assert(tap);
+
+	struct scan_field fields[2];
+	uint8_t spracc = 0;
+	uint8_t t[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+
+	/* fastdata 1-bit register */
+	fields[0].num_bits = 1;
+	fields[0].out_value = &spracc;
+	fields[0].in_value = NULL;
+
+	/* processor access data register 64 bit */
+	fields[1].num_bits = 64;
+	fields[1].out_value = t;
+
+	if (write_t) {
+		fields[1].in_value = NULL;
+		buf_set_u64(t, 0, 64, *data);
+	} else
+		fields[1].in_value = (uint8_t *) data;
+
+	jtag_add_dr_scan(tap, 2, fields, TAP_IDLE);
+
+	if (!write_t && data)
+		jtag_add_callback(mips_le_to_h_u64,
+			(jtag_callback_data_t) data);
 	keep_alive();
 
 	return ERROR_OK;

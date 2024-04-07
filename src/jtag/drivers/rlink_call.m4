@@ -1,21 +1,11 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+#
+# Copyright (C) 2008 Lou Deluxe
+# lou.openocd012@fixit.nospammail.net
+#
+
 m4_divert(`-1')
-/***************************************************************************
- *   Copyright (C) 2008 Lou Deluxe                                         *
- *   lou.openocd012@fixit.nospammail.net                                   *
- *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
- *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 2 of the License, or     *
- *   (at your option) any later version.                                   *
- *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
- *   GNU General Public License for more details.                          *
- *                                                                         *
- *   You should have received a copy of the GNU General Public License     *
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
- ***************************************************************************/
 
 m4_dnl Setup and hold times depend on SHIFTER_PRESCALER
 m4_define(`SETUP_DELAY_CYCLES', m4_eval(`('SHIFTER_PRESCALER` + 1) / 2'))
@@ -479,5 +469,3 @@ m4_delay(HOLD_DELAY_CYCLES - 10)
 	A = X
 	DR_MPEG = A ; return TCK low, as str912 reset halt seems to require it
 	BRANCH
-
-

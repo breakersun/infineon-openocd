@@ -1,5 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
-
 OUTPUT_ARCH( "riscv" )
 
 SECTIONS

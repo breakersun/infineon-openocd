@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+
 /*
  *   Driver for USB-JTAG, Altera USB-Blaster and compatibles
  *
@@ -10,25 +12,10 @@
  *   Copyright (C) 2009 Catalin Patulea cat@vv.carleton.ca
  *   Copyright (C) 2006 Kolja Waschk usbjtag@ixo.de
  *
- *   This program is free software; you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation; either version 2 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
  */
 
 #ifndef OPENOCD_JTAG_DRIVERS_USB_BLASTER_UBLAST_ACCESS_H
 #define OPENOCD_JTAG_DRIVERS_USB_BLASTER_UBLAST_ACCESS_H
-
-#include <libusb_common.h>
 
 /* Low level flags */
 #define COPY_TDO_BUFFER		(1 << 0)
@@ -38,8 +25,7 @@ struct ublast_lowlevel {
 	uint16_t ublast_pid;
 	uint16_t ublast_vid_uninit;
 	uint16_t ublast_pid_uninit;
-	char *ublast_device_desc;
-	struct jtag_libusb_device_handle *libusb_dev;
+	struct libusb_device_handle *libusb_dev;
 	char *firmware_path;
 
 	int (*write)(struct ublast_lowlevel *low, uint8_t *buf, int size,

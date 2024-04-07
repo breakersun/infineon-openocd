@@ -1,15 +1,10 @@
 /***************************************************************************
- *   Copyright (C) 2005 by Dominic Rath                                    *
- *   Dominic.Rath@gmx.de                                                   *
+ *   Copyright (C) 2020 by Bohdan Tymkiv, Andrii Lishchynskyi              *
+ *   bohdan.tymkiv@infineon.com bohdan200@gmail.com                        *
+ *   andrii.lishchynskyi@infineon.com                                      *
  *                                                                         *
- *   Copyright (C) 2008 by Spencer Oliver                                  *
- *   spen@spen-soft.co.uk                                                  *
- *                                                                         *
- *   Copyright (C) 2011 by Andreas Fritiofson                              *
- *   andreas.fritiofson@gmail.com                                          *
- *                                                                         *
- *   Copyright (C) 2014 by Tomas Vanek (PSoC 4 support derived from STM32) *
- *   vanekt@fbl.cz                                                         *
+ *   Copyright (C) <2019-2021>                                             *
+ *     <Cypress Semiconductor Corporation (an Infineon company)>           *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -25,918 +20,2015 @@
  *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
-
 #include "imp.h"
-#include <helper/binarybuffer.h>
-#include <jtag/jtag.h>
-#include <target/algorithm.h>
-#include <target/armv7m.h>
+#include "flash/progress.h"
+#include "helper/time_support.h"
+#include "target/algorithm.h"
+#include "target/arm_adi_v5.h"
+#include "target/breakpoints.h"
+#include "target/cortex_m.h"
+#include "target/register.h"
 
-/* device documets:
+#define PSOC4_SYSREQ_KEY1				0xB6
+#define PSOC4_SYSREQ_KEY2				0xD3
+#define PSOC4_SYSREQ_BIT				BIT(31)
+#define PSOC4_SYSREQ_HMASTER_BIT		BIT(30)
+#define PSOC4_SYSREQ_PRIVILEGED_BIT		BIT(28)
+#define PSOC4_SYSREQ_NO_REMAP			(PSOC4_SYSREQ_HMASTER_BIT | BIT(27))
 
- PSoC(R) 4: PSoC 4200 Family Datasheet
-	Document Number: 001-87197 Rev. *B  Revised August 29, 2013
+#define PSOC4_SROM_STATUS_MASK			0xF0000000
+#define PSOC4_SROM_STATUS_SUCCEEDED		0xA0000000
 
- PSoC 4100/4200 Family PSoC(R) 4 Architecture TRM
-	Document No. 001-85634 Rev. *E June 28, 2016
+#define PSOC4_CMD_GET_SILICON_ID		0x00
+#define PSOC4_CMD_LOAD_LATCH			0x04
+#define PSOC4_CMD_WRITE_ROW				0x05
+#define PSOC4_CMD_PROGRAM_ROW			0x06
+#define PSOC4_CMD_ERASE_ALL				0x0A
+#define PSOC4_CMD_CHECKSUM				0x0B
+#define PSOC4_CMD_WRITE_PROTECTION		0x0D
+#define PSOC4_CMD_SET_IMO48				0x15
+#define PSOC4_CMD_WRITE_SFLASH_ROW		0x18
+#define PSOC4_CMD_BULK_ERASE			0x1D
 
- PSoC(R) 4 Registers TRM Spec.
-	Document No. 001-85847 Rev. *A June 25, 2013
+#define PSOC4_CHIP_PROT_VIRGIN			0x00
+#define PSOC4_CHIP_PROT_OPEN			0x01
+#define PSOC4_CHIP_PROT_PROTECTED		0x02
+#define PSOC4_CHIP_PROT_KILL			0x04
 
- PSoC 4000 Family PSoC(R) 4 Technical Reference Manual
-	Document No. 001-89309 Rev. *B May 9, 2016
+#define PSOC4_ROMTABLE_PID0				0xF0000FE0
+#define PSOC4_ROMTABLE_DESIGNER			0xB4
 
- PSoC 41XX_BLE/42XX_BLE Family PSoC 4 BLE Architecture TRM
-	Document No. 001-92738 Rev. *C February 12, 2016
+#define NVIC_VTOR						0xE000ED08
 
- PSoC 4200L Family PSoC 4 Architecture TRM
-	Document No. 001-97952 Rev. *A December 15, 2015
+#define SFLASH_BASE_V1					0x0FFFF000
+#define SFLASH_BASE_V2					0x0FFFE000
 
- PSoC 4200L Family PSoC 4 Registers TRM
-	Document No. 001-98126 Rev. *A December 16, 2015
+#define BANK_ADDRESS_MASK				0xFFF00000
+#define BANK_WORK_ADDR_MASKED			0x1F000000
+#define BANK_SFLASH_ADDR_MASKED			0x0FF00000
+#define BANK_FLASHP_ADDR_MASKED			0x90400000
+#define BANK_CHIPP_ADDR_MASKED			0x90600000
 
- PSoC 4100M/4200M Family PSoC 4 Architecture TRM
-	Document No. 001-95223 Rev. *B July 29, 2015
+#define FAULT_BASE(n)					(0x40130000 + (n) * 0x00000100)
+#define FAULT_CTL(n)					(FAULT_BASE((n)) + 0x00)
+#define FAULT_STATUS(n)					(FAULT_BASE((n)) + 0x0C)
+#define FAULT_DATA0(n)					(FAULT_BASE((n)) + 0x10)
+#define FAULT_DATA1(n)					(FAULT_BASE((n)) + 0x14)
+#define FAULT_MASK0(n)					(FAULT_BASE((n)) + 0x50)
 
- PSoC 4100S Family PSoC 4 Architecture TRM
-	Document No. 002-10621 Rev. *A July 29, 2016
+#define FAULT_STATUS_VALID_MASK			BIT(31)
+#define FAULT_ENABLE_ECC_MASK			(BIT(4) | BIT(5) | BIT(7) | BIT(8))
 
- PSoC 4100S Family PSoC 4 Registers TRM
-	Document No. 002-10523 Rev. *A July 20, 2016
+#define PSOC4_STACK_WA_SIZE				512
+#define PSOC4_IPC_TIMEOUT_MS			1500
 
- PSoC Analog Coprocessor Architecture TRM
-	Document No. 002-10404 Rev. ** December 18, 2015
+#define GET_CPUSS(p4_info)				(p4_info->family->flags & PSOC4_LEGACY ? &cpuss_v1 : &cpuss_v2)
 
- CY8C4Axx PSoC Analog Coprocessor Registers TRM
-	Document No. 002-10405 Rev. ** December 18, 2015
+struct cpuss_type {
+	uint32_t geometry;
+	uint32_t sysreq;
+	uint32_t sysarg;
+};
 
- CY8C41xx, CY8C42xx Programming Specifications
-	Document No. 001-81799 Rev. *C March 4, 2014
+static const struct cpuss_type cpuss_v1 = {
+	.geometry = 0x400E0000,
+	.sysreq = 0x40000004,
+	.sysarg = 0x40000008,
+};
 
- CYBL10x6x, CY8C4127_BL, CY8C4247_BL Programming Specifications
-	Document No. 001-91508 Rev. *B September 22, 2014
+static const struct cpuss_type cpuss_v2 = {
+	.geometry = 0x40110000,
+	.sysreq = 0x40100004,
+	.sysarg = 0x40100008,
+};
 
- http://dmitry.gr/index.php?r=05.Projects&proj=24.%20PSoC4%20confidential
-*/
+struct spcif_type {
+	uint32_t mflash_size_mask;
+	uint32_t mflash_size_pos;
+	uint32_t sflash_size_mask;
+	uint32_t sflash_size_pos;
+	uint32_t macro_num_mask;
+	uint32_t macro_num_pos;
+	uint32_t row_size_mask;
+	uint32_t rows_size_pos;
+};
 
-/* register locations */
-#define PSOC4_SFLASH_MACRO0		0x0FFFF000
+static const struct spcif_type spcif_v1 = {
+	.mflash_size_mask = 0xffff << 0, /* 0:15 */
+	.mflash_size_pos = 0,
+	.sflash_size_mask = 0x0F << 16, /* 16:19 */
+	.sflash_size_pos = 16,
+	.macro_num_mask = 0x03 << 20, /* 20:21 */
+	.macro_num_pos = 20,
+	.row_size_mask = 0x03 << 22, /* 22:23 */
+	.rows_size_pos = 22,
+};
 
-#define PSOC4_CPUSS_SYSREQ_LEGACY	0x40000004
-#define PSOC4_CPUSS_SYSARG_LEGACY	0x40000008
-#define PSOC4_SPCIF_GEOMETRY_LEGACY	0x400E0000
+static const struct spcif_type spcif_v2 = {
+	.mflash_size_mask = 0x3FFF << 0, /* 0:13 */
+	.mflash_size_pos = 0,
+	.sflash_size_mask = 0x3F << 14, /* 14:19 */
+	.sflash_size_pos = 14,
+	.macro_num_mask = 0x03 << 20, /* 20:21 */
+	.macro_num_pos = 20,
+	.row_size_mask = 0x03 << 22, /* 22:23 */
+	.rows_size_pos = 22,
+};
 
-#define PSOC4_CPUSS_SYSREQ_NEW		0x40100004
-#define PSOC4_CPUSS_SYSARG_NEW		0x40100008
-#define PSOC4_SPCIF_GEOMETRY_NEW	0x40110000
+enum psoc4_family_flags {
+	PSOC4_LEGACY    = BIT(0),
+	PSOC4_HV        = BIT(1),
+	PSOC4_48MHZ_NRQ = BIT(2),
+	PSOC4_SFLASH_V2 = BIT(3),
+	PSOC4_NO_SFLASH = BIT(4),
+};
 
-#define PSOC4_TEST_MODE			0x40030014
-
-#define PSOC4_ROMTABLE_PID0		0xF0000FE0
-
-
-/* constants */
-#define PSOC4_SFLASH_MACRO_SIZE		0x800
-#define PSOC4_ROWS_PER_MACRO		512
-
-#define PSOC4_SROM_KEY1			0xb6
-#define PSOC4_SROM_KEY2			0xd3
-#define PSOC4_SROM_SYSREQ_BIT		(1<<31)
-#define PSOC4_SROM_HMASTER_BIT		(1<<30)
-#define PSOC4_SROM_PRIVILEGED_BIT	(1<<28)
-#define PSOC4_SROM_STATUS_SUCCEEDED	0xa0000000
-#define PSOC4_SROM_STATUS_FAILED	0xf0000000
-#define PSOC4_SROM_STATUS_MASK		0xf0000000
-
-/* not documented in any TRM */
-#define PSOC4_SROM_ERR_IMO_NOT_IMPLEM	0xf0000013
-
-#define PSOC4_CMD_GET_SILICON_ID	0
-#define PSOC4_CMD_LOAD_LATCH		4
-#define PSOC4_CMD_WRITE_ROW		5
-#define PSOC4_CMD_PROGRAM_ROW		6
-#define PSOC4_CMD_ERASE_ALL		0xa
-#define PSOC4_CMD_CHECKSUM		0xb
-#define PSOC4_CMD_WRITE_PROTECTION	0xd
-#define PSOC4_CMD_SET_IMO48		0x15
-#define PSOC4_CMD_WRITE_SFLASH_ROW	0x18
-
-#define PSOC4_CHIP_PROT_VIRGIN		0x0
-#define PSOC4_CHIP_PROT_OPEN		0x1
-#define PSOC4_CHIP_PROT_PROTECTED	0x2
-#define PSOC4_CHIP_PROT_KILL		0x4
-
-#define PSOC4_ROMTABLE_DESIGNER_CHECK	0xb4
-
-#define PSOC4_FAMILY_FLAG_LEGACY	1
-
-struct psoc4_chip_family {
-	uint16_t id;
+struct psoc4_family {
+	uint8_t id;
+	uint16_t siid_range[2];
 	const char *name;
+	const struct spcif_type *spcif;
 	uint32_t flags;
 };
 
-const struct psoc4_chip_family psoc4_families[] = {
-	{ 0x93, "PSoC4100/4200",           .flags = PSOC4_FAMILY_FLAG_LEGACY },
-	{ 0x9A, "PSoC4000",                .flags = 0 },
-	{ 0x9E, "PSoC/PRoC BLE (119E)",    .flags = 0 },
-	{ 0xA0, "PSoC4200L",               .flags = 0 },
-	{ 0xA1, "PSoC4100M/4200M",         .flags = 0 },
-	{ 0xA3, "PSoC/PRoC BLE (11A3)",    .flags = 0 },
-	{ 0xA9, "PSoC4000S",               .flags = 0 },
-	{ 0xAA, "PSoC/PRoC BLE (11AA)",    .flags = 0 },
-	{ 0xAB, "PSoC4100S",               .flags = 0 },
-	{ 0xAC, "PSoC Analog Coprocessor", .flags = 0 },
-	{ 0,    "Unknown",                 .flags = 0 }
+// clang-format off
+static const struct psoc4_family psoc4_families[] = {
+	{ 0x93, {0, 0},           "PSoC 4100/4200",             &spcif_v1, PSOC4_LEGACY, }, /* has known SROM bug (CDT#184422). */
+	{ 0x9A, {0, 0},           "PSoC 4000",                  &spcif_v1, 0, },            /* has known SROM bug (CDT#184422) */
+	{ 0x9E, {0, 0},           "PSoC 4xx7 BLE",              &spcif_v1, 0, },
+	{ 0xA0, {0, 0},           "PSoC 4200L",                 &spcif_v1, PSOC4_48MHZ_NRQ, },
+	{ 0xA1, {0, 0},           "PSoC 4100M/4200M",           &spcif_v1, PSOC4_48MHZ_NRQ, },
+	{ 0xA3, {0, 0},           "PSoC 4xx8 BLE",              &spcif_v1, PSOC4_48MHZ_NRQ, },
+	{ 0xA7, {0, 0},           "PSoC 4000DS/4200DS",         &spcif_v1, 0, },
+	{ 0xA9, {0, 0},           "PSoC 4000S/4700S",           &spcif_v2, 0, },
+	{ 0xAA, {0, 0},           "PSoC 4xx8 BLE",              &spcif_v1, PSOC4_48MHZ_NRQ, },
+	{ 0xAB, {0, 0},           "PSoC 4100S",                 &spcif_v2, 0, },
+	{ 0xAC, {0, 0},           "PSoC 4100PS/PSoC Analog CP", &spcif_v2, 0, },
+	{ 0xAE, {0, 0},           "PSoC 4xx8 BLE",              &spcif_v1, PSOC4_48MHZ_NRQ, },
+	{ 0xB5, {0, 0},           "PSoC 4100S Plus",            &spcif_v2, 0, },
+	{ 0xB7, {0, 0},           "TrueTouch TSG7L",            &spcif_v2, 0, },
+	{ 0xB8, {0, 0},           "PSoC 4100S Plus/PSoC 4500",  &spcif_v2, 0, },
+	{ 0xBE, {0, 0},           "PSoC 4100S Max",             &spcif_v2, PSOC4_SFLASH_V2, },
+	{ 0xC6, {0, 0},           "PSoC4A-SF2",                 &spcif_v2, 0, },
+
+	{ 0xA8, {0, 0},           "CCG4",                       &spcif_v1, PSOC4_NO_SFLASH, },
+	{ 0xAD, {0x1D00, 0x1D1F}, "CCG3",                       &spcif_v2, PSOC4_NO_SFLASH, },
+	{ 0xAD, {0x1D20, 0x1DFF}, "PMG1-S2",                    &spcif_v2, PSOC4_NO_SFLASH, },
+	{ 0xAF, {0, 0},           "CCG4",                       &spcif_v1, PSOC4_NO_SFLASH, },
+	{ 0xB0, {0x2000, 0x20FF}, "CCG3PA",                     &spcif_v2, PSOC4_NO_SFLASH, },
+	{ 0xB0, {0x2020, 0x204F}, "PMG1-S0",                    &spcif_v2, PSOC4_NO_SFLASH, },
+	{ 0xBA, {0x2A00, 0x2A1F}, "CCG6",                       &spcif_v2, PSOC4_NO_SFLASH, },
+	{ 0xBA, {0x2A20, 0x2AFF}, "PMG1-S1",                    &spcif_v2, PSOC4_NO_SFLASH, },
+	{ 0xC0, {0, 0},           "CCG6DF",                     &spcif_v2, PSOC4_NO_SFLASH, },
+	{ 0xC1, {0x3100, 0x317F}, "CCG7D",                      &spcif_v2, PSOC4_NO_SFLASH, }, /* SJZ-733 */
+	{ 0xC1, {0x3180, 0x31FF}, "WLC1",                       &spcif_v2, PSOC4_NO_SFLASH, }, /* SJZ-733 */
+	{ 0xC3, {0, 0},           "CCG6SF",                     &spcif_v2, PSOC4_NO_SFLASH, },
+	{ 0xC5, {0, 0},           "PMG1-S3",                    &spcif_v2, PSOC4_NO_SFLASH, },
+	{ 0xCA, {0x3A20, 0x3A3F}, "PMG1-B1",                    &spcif_v2, PSOC4_NO_SFLASH, }, /* Subset of CCG7S */
+	{ 0xCA, {0, 0},           "CCG7S",                      &spcif_v2, PSOC4_NO_SFLASH, },
+
+	{ 0xC2, {0, 0},           "PSoC4-HVPA-144K",            &spcif_v2, PSOC4_HV | PSOC4_SFLASH_V2, },
+	{ 0xC7, {0, 0},           "PSoC4-HVPA-208K",            &spcif_v2, PSOC4_HV | PSOC4_SFLASH_V2, },
+	{ 0xC8, {0, 0},           "PSoC4-HVMS-144K",            &spcif_v2, PSOC4_HV | PSOC4_SFLASH_V2, },
+	{ 0xC9, {0, 0},           "PSoC4-HVMS-64K",             &spcif_v2, PSOC4_HV | PSOC4_SFLASH_V2, },
+	{ 0xCB, {0, 0},           "PAG2S",                      &spcif_v2, PSOC4_HV | PSOC4_SFLASH_V2, },
+
+	{ 0, {0, 0}, NULL, NULL, 0, },
 };
+// clang-format on
 
+struct psoc4_info {
+	uint16_t revision_id;
 
-struct psoc4_flash_bank {
+	uint32_t mflash_size;
+	uint32_t sflash_size;
+	uint32_t num_macro;
 	uint32_t row_size;
-	uint32_t user_bank_size;
-	int num_macros;
+	uint32_t flctrl_idx;
+
+	struct {
+		uint32_t area_idx;
+		uint32_t row_prot_addr[4];
+		uint32_t chip_prot_offs;
+		uint32_t siid_offs;
+	} sflash;
+
+	const struct psoc4_family *family;
 	bool probed;
-	uint8_t cmd_program_row;
-	uint16_t family_id;
-	bool legacy_family;
-	uint32_t cpuss_sysreq_addr;
-	uint32_t cpuss_sysarg_addr;
-	uint32_t spcif_geometry_addr;
 };
 
+static struct armv7m_algorithm g_armv7m_algo;
+static struct working_area *g_stack_area;
+static bool g_ecc_enabled;
 
-static const struct psoc4_chip_family *psoc4_family_by_id(uint16_t family_id)
+/* Basic helper functions */
+static inline bool is_mflash_bank(struct flash_bank *bank)
 {
-	const struct psoc4_chip_family *p = psoc4_families;
-	while (p->id && p->id != family_id)
+	return bank->base == 0;
+}
+
+static inline bool is_wflash_bank(struct flash_bank *bank)
+{
+	return (bank->base & BANK_ADDRESS_MASK) == BANK_WORK_ADDR_MASKED;
+}
+
+static inline bool is_sflash_bank(struct flash_bank *bank)
+{
+	return (bank->base & BANK_ADDRESS_MASK) == BANK_SFLASH_ADDR_MASKED;
+}
+
+static inline bool is_flashp_bank(struct flash_bank *bank)
+{
+	return (bank->base & BANK_ADDRESS_MASK) == BANK_FLASHP_ADDR_MASKED;
+}
+
+static inline bool is_chipp_bank(struct flash_bank *bank)
+{
+	return (bank->base & BANK_ADDRESS_MASK) == BANK_CHIPP_ADDR_MASKED;
+}
+
+static inline bool is_psoc4hv(struct flash_bank *bank)
+{
+	struct psoc4_info *p4_info = bank->driver_priv;
+	return p4_info->family->flags & PSOC4_HV;
+}
+
+static const char *psoc4_family_name(uint16_t family_id, uint16_t siid)
+{
+	const struct psoc4_family *p = psoc4_families;
+	while (p->id) {
+		if (p->id == family_id && p->siid_range[0] == 0 && p->siid_range[1] == 0)
+			break;
+		if (p->id == family_id && siid >= p->siid_range[0] && siid <= p->siid_range[1])
+			break;
 		p++;
+	}
 
-	return p;
+	return p->name;
 }
 
-static const char *psoc4_decode_chip_protection(uint8_t protection)
+/** **********************************************************************************************
+ * @brief Disables 0x0000:0000 - 0x0000:0007 remap to ROM
+ * @param target current target
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
+static int psoc4_disable_remap(struct target *target)
 {
-	switch (protection) {
-	case PSOC4_CHIP_PROT_VIRGIN:
-		return "protection VIRGIN";
-	case PSOC4_CHIP_PROT_OPEN:
-		return "protection open";
-	case PSOC4_CHIP_PROT_PROTECTED:
-		return "PROTECTED";
-	case PSOC4_CHIP_PROT_KILL:
-		return "protection KILL";
-	default:
-		LOG_WARNING("Unknown protection state 0x%02" PRIx8 "", protection);
-		return "";
-	}
-}
-
-
-/* flash bank <name> psoc <base> <size> 0 0 <target#>
- */
-FLASH_BANK_COMMAND_HANDLER(psoc4_flash_bank_command)
-{
-	struct psoc4_flash_bank *psoc4_info;
-
-	if (CMD_ARGC < 6)
-		return ERROR_COMMAND_SYNTAX_ERROR;
-
-	psoc4_info = calloc(1, sizeof(struct psoc4_flash_bank));
-
-	bank->driver_priv = psoc4_info;
-	bank->default_padded_value = bank->erased_value = 0x00;
-	psoc4_info->user_bank_size = bank->size;
-	psoc4_info->cmd_program_row = PSOC4_CMD_WRITE_ROW;
-
-	return ERROR_OK;
-}
-
-
-/* PSoC 4 system ROM request
- *  Setting SROM_SYSREQ_BIT in CPUSS_SYSREQ register runs NMI service
- *  in sysrem ROM. Algorithm just waits for NMI to finish.
- *  When sysreq_params_size == 0 only one parameter is passed in CPUSS_SYSARG register.
- *  Otherwise address of memory parameter block is set in CPUSS_SYSARG
- *  and the first parameter is written to the first word of parameter block
- */
-static int psoc4_sysreq(struct flash_bank *bank, uint8_t cmd,
-		uint16_t cmd_param,
-		uint32_t *sysreq_params, uint32_t sysreq_params_size,
-		uint32_t *sysarg_out)
-{
-	struct target *target = bank->target;
-	struct psoc4_flash_bank *psoc4_info = bank->driver_priv;
-
-	struct working_area *sysreq_wait_algorithm;
-	struct working_area *sysreq_mem;
-
-	struct reg_param reg_params[1];
-	struct armv7m_algorithm armv7m_info;
-
-	int retval = ERROR_OK;
-
-	uint32_t param1 = PSOC4_SROM_KEY1
-			 | ((PSOC4_SROM_KEY2 + cmd) << 8)
-			 | (cmd_param << 16);
-
-	static uint8_t psoc4_sysreq_wait_code[] = {
-		/* system request NMI is served immediately after algo run
-       now we are done: break */
-		0x00, 0xbe,		/* bkpt 0 */
-	};
-
-	const int code_words = (sizeof(psoc4_sysreq_wait_code) + 3) / 4;
-					/* stack must be aligned */
-	const int stack_size = 256;
-	/* tested stack sizes on PSoC4200:
-		ERASE_ALL	144
-		PROGRAM_ROW	112
-		other sysreq	 68
-	*/
-
-	/* allocate area for sysreq wait code and stack */
-	if (target_alloc_working_area(target, code_words * 4 + stack_size,
-			&sysreq_wait_algorithm) != ERROR_OK) {
-		LOG_DEBUG("no working area for sysreq code");
-		return ERROR_TARGET_RESOURCE_NOT_AVAILABLE;
-	}
-
-	/* Write the code */
-	retval = target_write_buffer(target,
-			sysreq_wait_algorithm->address,
-			sizeof(psoc4_sysreq_wait_code),
-			psoc4_sysreq_wait_code);
-	if (retval != ERROR_OK) {
-		/* we already allocated the writing code, but failed to get a
-		 * buffer, free the algorithm */
-		goto cleanup_algo;
-	}
-
-	if (sysreq_params_size) {
-		LOG_DEBUG("SYSREQ %02" PRIx8 " %04" PRIx16 " %08" PRIx32 " size %" PRIu32,
-			cmd, cmd_param, param1, sysreq_params_size);
-		/* Allocate memory for sysreq_params */
-		retval = target_alloc_working_area(target, sysreq_params_size, &sysreq_mem);
-		if (retval != ERROR_OK) {
-			LOG_WARNING("no working area for sysreq parameters");
-
-			/* we already allocated the writing code, but failed to get a
-			 * buffer, free the algorithm */
-			retval = ERROR_TARGET_RESOURCE_NOT_AVAILABLE;
-			goto cleanup_algo;
-		}
-
-		/* Write sysreq_params */
-		target_buffer_set_u32(target, (uint8_t *)sysreq_params, param1);
-		retval = target_write_buffer(target, sysreq_mem->address,
-				sysreq_params_size, (uint8_t *)sysreq_params);
-		if (retval != ERROR_OK)
-			goto cleanup_mem;
-
-		/* Set address of sysreq parameters block */
-		retval = target_write_u32(target, psoc4_info->cpuss_sysarg_addr, sysreq_mem->address);
-		if (retval != ERROR_OK)
-			goto cleanup_mem;
-
-	} else {
-		/* Sysreq without memory block of parameters */
-		LOG_DEBUG("SYSREQ %02" PRIx8 " %04" PRIx16 " %08" PRIx32,
-			cmd, cmd_param, param1);
-		/* Set register parameter */
-		retval = target_write_u32(target, psoc4_info->cpuss_sysarg_addr, param1);
-		if (retval != ERROR_OK)
-			goto cleanup_mem;
-	}
-
-	armv7m_info.common_magic = ARMV7M_COMMON_MAGIC;
-	armv7m_info.core_mode = ARM_MODE_THREAD;
-
-	/* sysreq stack */
-	init_reg_param(&reg_params[0], "sp", 32, PARAM_OUT);
-	buf_set_u32(reg_params[0].value, 0, 32,
-		    sysreq_wait_algorithm->address + sysreq_wait_algorithm->size);
-
-	struct armv7m_common *armv7m = target_to_armv7m(target);
-	if (armv7m == NULL) {
-		/* something is very wrong if armv7m is NULL */
-		LOG_ERROR("unable to get armv7m target");
-		retval = ERROR_FAIL;
-		goto cleanup;
-	}
-
-	/* Set SROM request */
-	retval = target_write_u32(target, psoc4_info->cpuss_sysreq_addr,
-				  PSOC4_SROM_SYSREQ_BIT | PSOC4_SROM_HMASTER_BIT | cmd);
-	if (retval != ERROR_OK)
-		goto cleanup;
-
-	/* Execute wait code */
-	retval = target_run_algorithm(target, 0, NULL,
-				sizeof(reg_params) / sizeof(*reg_params), reg_params,
-				sysreq_wait_algorithm->address, 0, 1000, &armv7m_info);
-	if (retval != ERROR_OK) {
-		LOG_ERROR("sysreq wait code execution failed");
-		goto cleanup;
-	}
-
-	uint32_t sysarg_out_tmp;
-	retval = target_read_u32(target, psoc4_info->cpuss_sysarg_addr, &sysarg_out_tmp);
-	if (retval != ERROR_OK)
-		goto cleanup;
-
-	if (sysarg_out) {
-		*sysarg_out = sysarg_out_tmp;
-		/* If result is an error, do not show now, let caller to decide */
-	} else if ((sysarg_out_tmp & PSOC4_SROM_STATUS_MASK) != PSOC4_SROM_STATUS_SUCCEEDED) {
-		LOG_ERROR("sysreq error 0x%" PRIx32, sysarg_out_tmp);
-		retval = ERROR_FAIL;
-	}
-cleanup:
-	destroy_reg_param(&reg_params[0]);
-
-cleanup_mem:
-	if (sysreq_params_size)
-		target_free_working_area(target, sysreq_mem);
-
-cleanup_algo:
-	target_free_working_area(target, sysreq_wait_algorithm);
-
-	return retval;
-}
-
-
-/* helper routine to get silicon ID from a PSoC 4 chip */
-static int psoc4_get_silicon_id(struct flash_bank *bank, uint32_t *silicon_id, uint16_t *family_id, uint8_t *protection)
-{
-	struct target *target = bank->target;
-	struct psoc4_flash_bank *psoc4_info = bank->driver_priv;
-
-	uint32_t part0, part1;
-
-	int retval = psoc4_sysreq(bank, PSOC4_CMD_GET_SILICON_ID, 0, NULL, 0, &part0);
-	if (retval != ERROR_OK)
-		return retval;
-
-	if ((part0 & PSOC4_SROM_STATUS_MASK) != PSOC4_SROM_STATUS_SUCCEEDED) {
-		LOG_ERROR("sysreq error 0x%" PRIx32, part0);
+	struct flash_bank *bank;
+	int hr = get_flash_bank_by_addr(target, 0, true, &bank);
+	if (hr != ERROR_OK)
 		return ERROR_FAIL;
-	}
 
-	retval = target_read_u32(target, psoc4_info->cpuss_sysreq_addr, &part1);
-	if (retval != ERROR_OK)
-		return retval;
-
-	/* build ID as Cypress sw does:
-	 * bit 31..16 silicon ID
-	 * bit 15..8  revision ID (so far 0x11 for all devices)
-	 * bit 7..0   family ID (lowes 8 bits)
-	 */
-	if (silicon_id)
-			*silicon_id = ((part0 & 0x0000ffff) << 16)
-				    | ((part0 & 0x00ff0000) >> 8)
-				    | (part1 & 0x000000ff);
-
-	if (family_id)
-			*family_id = part1 & 0x0fff;
-
-	if (protection)
-			*protection = (part1 >> 12) & 0x0f;
-
-	return ERROR_OK;
+	/* Disable 0x0000:0000 - 0x0000:0007 remap to ROM */
+	struct psoc4_info *info = bank->driver_priv;
+	return target_write_u32(target, GET_CPUSS(info)->sysreq, PSOC4_SYSREQ_NO_REMAP);
 }
 
-
-static int psoc4_get_family(struct target *target, uint16_t *family_id)
+/** **********************************************************************************************
+ * @brief translates given address of the flash bank to it's macro number
+ * @param bank flash bank
+ * @param address absolute address within given bank
+ * @return number of the flash macro
+ *************************************************************************************************/
+static uint8_t psoc4_addr_to_macro(struct flash_bank *bank, uint32_t address)
 {
-	int retval, i;
-	uint32_t pidbf[3];
-	uint8_t pid[3];
+	struct psoc4_info *p4_info = bank->driver_priv;
+	uint32_t die_base;
+	uint32_t unwounded_size;
 
-	retval = target_read_memory(target, PSOC4_ROMTABLE_PID0, 4, 3, (uint8_t *)pidbf);
+	if ((address & BANK_ADDRESS_MASK) == BANK_SFLASH_ADDR_MASKED) {
+		die_base = p4_info->family->flags & PSOC4_SFLASH_V2 ? SFLASH_BASE_V2 : SFLASH_BASE_V1;
+		unwounded_size = p4_info->sflash_size;
+	} else {
+		die_base = bank->base;
+		unwounded_size = p4_info->mflash_size;
+	}
+
+	return (address - die_base) * p4_info->num_macro / unwounded_size;
+}
+
+/** **********************************************************************************************
+ * @brief This is the very first step during target detection. Function retrieves family and
+ * revision IDs from the ROM table and populates the following fields in the p4_info structure:
+ * p4_info->family_id = family_id;
+ * p4_info->revision_id = revision_id;
+ * p4_info->family = family;
+ *
+ * @param target current target
+ * @param p4_info pointer, will be populated
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
+static int psoc4_read_family(struct target *target, struct psoc4_info *p4_info)
+{
+	int retval;
+
+	uint32_t pid_buf[4];
+	retval = target_read_memory(target, PSOC4_ROMTABLE_PID0, 4, 4, (uint8_t *)pid_buf);
 	if (retval != ERROR_OK)
 		return retval;
 
-	for (i = 0; i < 3; i++) {
-		uint32_t tmp = target_buffer_get_u32(target, (uint8_t *)(pidbf + i));
+	uint8_t pid[4];
+	for (int i = 0; i < 4; i++) {
+		uint32_t tmp = target_buffer_get_u32(target, (uint8_t *)&pid_buf[i]);
 		if (tmp & 0xffffff00) {
 			LOG_ERROR("Unexpected data in ROMTABLE");
 			return ERROR_FAIL;
 		}
-		pid[i] = tmp & 0xff;
+		pid[i] = tmp;
 	}
 
-	uint16_t family = pid[0] | ((pid[1] & 0xf) << 8);
+	uint16_t family_id = pid[0] | ((pid[1] & 0xf) << 8);
+	p4_info->revision_id = (pid[2] & 0xF0) | ((pid[3] & 0xF0) >> 4);
 	uint32_t designer = ((pid[1] & 0xf0) >> 4) | ((pid[2] & 0xf) << 4);
 
-	if (designer != PSOC4_ROMTABLE_DESIGNER_CHECK) {
+	if (designer != PSOC4_ROMTABLE_DESIGNER) {
 		LOG_ERROR("ROMTABLE designer is not Cypress");
 		return ERROR_FAIL;
 	}
 
-	*family_id = family;
+	p4_info->family = NULL;
+	for (const struct psoc4_family *p = psoc4_families; p->id; p++) {
+		if (p->id == family_id) {
+			p4_info->family = p;
+			break;
+		}
+	}
+
+	if (!p4_info->family) {
+		LOG_ERROR("PSoC4 family 0x%02X is not supported", family_id);
+		return ERROR_FAIL;
+	}
+
 	return ERROR_OK;
 }
 
-
-static int psoc4_flash_prepare(struct flash_bank *bank)
+/** **********************************************************************************************
+ * @brief based on the p4_info.controller_idx, reads one of the SPCIF.GEOMETRY registers and
+ * populates the following fields in the p4_info structure:
+ * p4_info->mflash_size
+ * p4_info->sflash_size
+ * p4_info->num_macros
+ * p4_info->row_size
+ * @param target current target
+ * @param p4_info pointer, will be populated
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
+static int psoc4_read_geometry(struct target *target, struct psoc4_info *p4_info)
 {
-	struct target *target = bank->target;
-	struct psoc4_flash_bank *psoc4_info = bank->driver_priv;
+	const struct spcif_type *spcif = p4_info->family->spcif;
+	struct armv7m_common *armv7m = target_to_armv7m(target);
+
+	uint32_t geom = 0;
+	const struct cpuss_type *cpuss = GET_CPUSS(p4_info);
+	int hr = mem_ap_read_atomic_u32(armv7m->debug_ap, cpuss->geometry + (0x10000 * p4_info->flctrl_idx), &geom);
+	if (hr != ERROR_OK)
+		return hr;
+
+	uint32_t val;
+	val = (geom & spcif->mflash_size_mask) >> spcif->mflash_size_pos;
+	p4_info->mflash_size = (val + 1) * 256;
+
+	val = (geom & spcif->sflash_size_mask) >> spcif->sflash_size_pos;
+	p4_info->sflash_size = (val + 1) * 256;
+
+	val = (geom & spcif->macro_num_mask) >> spcif->macro_num_pos;
+	p4_info->num_macro = (val + 1);
+
+	val = (geom & spcif->row_size_mask) >> spcif->rows_size_pos;
+	p4_info->row_size = (val + 1) * 64;
+
+	return ERROR_OK;
+}
+
+/** **********************************************************************************************
+ * @brief translates sysreq error code to the human-readable format
+ * @param error_code sysreq error code
+ * @return string representing sysreq code in a human-readable format
+ *************************************************************************************************/
+static const char *psoc4_sysreq_errorstr(uint32_t error_code)
+{
+	switch (error_code) {
+	case 0xF0000001:
+		return "Invalid Chip Protection Mode - This API is not available in current chip protection mode";
+	case 0xF0000002:
+		return "Invalid NVL Address - The NVL address provided must be within the range 0x00 - 0x07";
+	case 0xF0000003:
+		return "Invalid Page Latch Address/Size. Address is out of bounds or size is too large/unsupported";
+	case 0xF0000004:
+		return "Invalid Address - The row id or byte address provided is outside of the available memory";
+	case 0xF0000005:
+		return "Row Protected - The row id provided is a protected row";
+	case 0xF000000A:
+		return "Checksum Zero Failed - The calculated checksum was not zero";
+	case 0xF000000B:
+		return "Invalid Opcode - The opcode is not a valid API opcode";
+	case 0xF000000C:
+		return "Key Opcode Mismatch - The opcode provided does not match key1 and key2";
+	case 0xF000000D:
+		return "Macro Protected - The macro id provided is protected";
+	case 0xF000000E:
+		return "Invalid start address - The start address is greater than the end address provided";
+	case 0xF000000F:
+		return "No NVL Used - This is the return code for any NVL specific commands called for parts without NVLs";
+	case 0xF0000010:
+		return "No Sector Erase - The Erase Sector operation is not supported";
+	case 0xF0000011:
+		return "API Not Instantiated - The SRAM API for the opcode is not instantiated";
+	case 0xF0000012:
+		return "Invalid Flash Clock - set IMO to 48MHz before Write/Erase operations";
+	case 0xF0000013:
+		return "Invalid Macro ID - the macro provided is outside of the available macros";
+	case 0xF0000014:
+		return "API not Available in DEAD Mode";
+	case 0xF0000015:
+		return "An SRSS Register is Lock Protected";
+	default:
+		LOG_ERROR("Unknown sysreq error 0x%" PRIx32, error_code);
+		return "Unknown sysreq error";
+	}
+}
+
+/** **********************************************************************************************
+ * @brief translates chip protection value to the human-readable format
+ * @param protection device protection state
+ * @return string representing chip protection in a human-readable format
+ *************************************************************************************************/
+static const char *psoc4_protection_str(uint8_t protection)
+{
+	static const char *const protection_str[5] = {
+		"VIRGIN", "OPEN", "PROTECTED", "UNKNOWN", "KILL",
+	};
+
+	if (protection > 4)
+		protection = 3; /* UNKNOWN */
+
+	return protection_str[protection];
+}
+
+/** ***********************************************************************************************
+ * @brief invokes given SROM API passing additional parameters either via SYSARG register or
+ * via in RAM depending on the number of parameters. If ram_params is not NULL all parameters,
+ * including mandatory cmd_param, will be passed via RAM.
+ * @param target current target
+ * @param p4_info pointer to structure with target-specific information
+ * @param cmd SROM API request code
+ * @param cmd_param mandatory SROM API parameter
+ * @param ram_params optional pointer to additional parameters
+ * @param ram_params_size size of additional parameters, in bytes
+ * @param sysarg_out SROM API return code
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
+static int psoc4_sysreq(struct target *target, struct psoc4_info *p4_info, uint8_t cmd, uint16_t cmd_param,
+						uint8_t *ram_params, uint32_t ram_params_size, uint32_t *sysarg_out, bool quiet)
+{
+	int hr;
+	if (ram_params) {
+		uint32_t ram_param;
+		buf_set_buf(ram_params, 0, &ram_param, 0, 32);
+		LOG_DEBUG("sysreq cmd: 0x%02X, param: 0x%04X, ram_param: 0x%08X", cmd, cmd_param, ram_param);
+	} else {
+		LOG_DEBUG("sysreq cmd: 0x%02X, param: 0x%04X, ram_param: none", cmd, cmd_param);
+	}
+
+	const struct cpuss_type *cpuss = GET_CPUSS(p4_info);
+
+	const uint32_t param = PSOC4_SYSREQ_KEY1 | ((PSOC4_SYSREQ_KEY2 + cmd) << 8) | (cmd_param << 16);
+	struct working_area *ram_param_area = NULL;
+
+	if (ram_params) {
+		hr = target_alloc_working_area(target, ram_params_size + 4, &ram_param_area);
+		if (hr != ERROR_OK)
+			return hr;
+
+		hr = target_write_u32(target, ram_param_area->address, param);
+		if (hr != ERROR_OK)
+			goto cleanup_ram_wa;
+
+		hr = target_write_buffer(target, ram_param_area->address + 4, ram_params_size, ram_params);
+		if (hr != ERROR_OK)
+			goto cleanup_ram_wa;
+
+		hr = target_write_u32(target, cpuss->sysarg, ram_param_area->address);
+		if (hr != ERROR_OK)
+			goto cleanup_ram_wa;
+	} else {
+		hr = target_write_u32(target, cpuss->sysarg, param);
+		if (hr != ERROR_OK)
+			return hr;
+	}
+
+	hr = target_write_u32(target, cpuss->sysreq, PSOC4_SYSREQ_BIT | PSOC4_SYSREQ_HMASTER_BIT | cmd);
+	if (hr != ERROR_OK)
+		goto cleanup_ram_wa;
+
+	uint32_t val;
+	int64_t t0 = timeval_ms();
+	do {
+		int64_t elapsed_ms = timeval_ms() - t0;
+		if (elapsed_ms > PSOC4_IPC_TIMEOUT_MS)
+			break;
+
+		hr = target_read_u32(target, cpuss->sysreq, &val);
+		if (hr != ERROR_OK)
+			goto cleanup_ram_wa;
+
+	} while (val & (PSOC4_SYSREQ_BIT | PSOC4_SYSREQ_PRIVILEGED_BIT));
+
+	hr = target_read_u32(target, cpuss->sysarg, &val);
+	if (hr != ERROR_OK)
+		goto cleanup_ram_wa;
+
+	if ((val & PSOC4_SROM_STATUS_MASK) != PSOC4_SROM_STATUS_SUCCEEDED) {
+		if (!quiet)
+			LOG_ERROR("%s", psoc4_sysreq_errorstr(val));
+
+		hr = ERROR_FAIL;
+	}
+
+	if (sysarg_out)
+		*sysarg_out = val;
+
+cleanup_ram_wa:
+	if (ram_param_area)
+		target_free_working_area(target, ram_param_area);
+
+	return hr;
+}
+
+/** ***********************************************************************************************
+ * @brief starts pseudo flash algorithm and leaves it running. Function allocates working area for
+ * algorithm code and CPU stack, adjusts stack pointer, uploads and starts the algorithm.
+ * Algorithm (a basic infinite loop) runs asynchronously while driver performs Flash operations.
+ * @param target current target
+ * @param p4_info pointer to structure with target-specific information
+ *************************************************************************************************/
+static int psoc4_sysreq_prepare(struct target *target, struct psoc4_info *p4_info)
+{
+	if (target->coreid == 0xFF) { /* Chip is protected */
+		if (!(p4_info->family->flags & PSOC4_48MHZ_NRQ))
+			return psoc4_sysreq(target, p4_info, PSOC4_CMD_SET_IMO48, 0, NULL, 0, NULL, false);
+
+		return ERROR_OK;
+	}
 
 	if (target->state != TARGET_HALTED) {
 		LOG_ERROR("Target not halted");
 		return ERROR_TARGET_NOT_HALTED;
 	}
 
-	uint16_t family_id;
-	int retval;
+	/* Initialize Vector Table Offset register (in case FW modified it) */
+	int hr = target_write_u32(target, NVIC_VTOR, 0x00000000);
+	if (hr != ERROR_OK)
+		return hr;
 
-	/* get family ID from SROM call */
-	retval = psoc4_get_silicon_id(bank, NULL, &family_id, NULL);
-	if (retval != ERROR_OK)
-		return retval;
+	/* Allocate Working Area for Stack and Flash algorithm */
+	hr = target_alloc_working_area(target, PSOC4_STACK_WA_SIZE, &g_stack_area);
+	if (hr != ERROR_OK)
+		return hr;
 
-	/* and check with family ID from ROMTABLE */
-	if (family_id != psoc4_info->family_id) {
-		LOG_ERROR("Family mismatch");
+	g_armv7m_algo.common_magic = ARMV7M_COMMON_MAGIC;
+	g_armv7m_algo.core_mode = ARM_MODE_THREAD;
+
+	struct reg_param reg_params;
+	init_reg_param(&reg_params, "sp", 32, PARAM_OUT);
+	buf_set_u32(reg_params.value, 0, 32, g_stack_area->address + g_stack_area->size);
+
+	/* Write 'cpsie	i' + basic infinite loop algorithm to target RAM */
+	hr = target_write_u32(target, g_stack_area->address, 0xE7FEB662);
+	if (hr != ERROR_OK)
+		goto destroy_rp_free_wa;
+
+	hr = target_start_algorithm(target, 0, NULL, 1, &reg_params, g_stack_area->address, 0, &g_armv7m_algo);
+	if (hr != ERROR_OK)
+		goto destroy_rp_free_wa;
+
+	if (!(p4_info->family->flags & PSOC4_48MHZ_NRQ)) {
+		hr = psoc4_sysreq(target, p4_info, PSOC4_CMD_SET_IMO48, 0, NULL, 0, NULL, false);
+		if (hr != ERROR_OK)
+			goto destroy_rp_free_wa;
+	}
+
+	destroy_reg_param(&reg_params);
+	return hr;
+
+destroy_rp_free_wa:
+	/* Something went wrong, do some cleanup */
+	destroy_reg_param(&reg_params);
+
+	if (g_stack_area) {
+		target_free_working_area(target, g_stack_area);
+		g_stack_area = NULL;
+	}
+
+	return hr;
+}
+
+/** ***********************************************************************************************
+ * @brief stops running flash algorithm and releases associated resources.
+ * This function is also used for cleanup in case of errors so g_stack_area may be NULL.
+ * These cases have to be handled gracefully.
+ * @param target current target
+ * @param p4_info pointer to structure with target-specific information
+ *************************************************************************************************/
+static void psoc4_sysreq_release(struct target *target, struct psoc4_info *p4_info)
+{
+	if (g_stack_area) {
+		/* Special core_id for fake SysAP */
+		if (target->coreid == 0xFF)
+			return;
+
+		/* Stop flash algorithm if it is running */
+		if (target->running_alg) {
+			int hr = target_halt(target);
+			if (hr != ERROR_OK)
+				goto exit_free_wa;
+
+			hr = target_wait_algorithm(target, 0, NULL, 0, NULL, 0, PSOC4_IPC_TIMEOUT_MS, &g_armv7m_algo);
+			if (hr != ERROR_OK)
+				goto exit_free_wa;
+		}
+
+	exit_free_wa:
+		/* Free Stack/Flash algorithm working area */
+		target_free_working_area(target, g_stack_area);
+		g_stack_area = NULL;
+	}
+
+	/* Possible error is not critical here, not required and not possible via mem_ap */
+	if (target->coreid != 255)
+		psoc4_disable_remap(target);
+}
+
+/** ***********************************************************************************************
+ * @brief configures SFlash layout for PSoC4 parts
+ * @param bank SFlash bank to configure
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
+static int psoc4_decode_sflash(struct flash_bank *bank)
+{
+	struct psoc4_info *p4_info = bank->driver_priv;
+	const uint32_t sflash_base = p4_info->family->flags & PSOC4_SFLASH_V2 ? SFLASH_BASE_V2 : SFLASH_BASE_V1;
+
+	for (size_t i = 0; i < p4_info->num_macro; i++)
+		p4_info->sflash.row_prot_addr[i] = sflash_base + i * p4_info->row_size * 8;
+
+	switch (p4_info->row_size) {
+	case 128:
+		p4_info->sflash.chip_prot_offs = 0x7C;
+		p4_info->sflash.siid_offs = 0x0144;
+		break;
+	case 256:
+		p4_info->sflash.chip_prot_offs = 0x0FC;
+		p4_info->sflash.siid_offs = 0x244;
+		break;
+	default:
+		LOG_ERROR("SFlash probe: unsupported row size - %d bytes", p4_info->row_size);
 		return ERROR_FAIL;
 	}
 
-	if (!psoc4_info->legacy_family) {
-		uint32_t sysreq_status;
-		retval = psoc4_sysreq(bank, PSOC4_CMD_SET_IMO48, 0, NULL, 0, &sysreq_status);
-		if (retval != ERROR_OK)
-			return retval;
-
-		if ((sysreq_status & PSOC4_SROM_STATUS_MASK) != PSOC4_SROM_STATUS_SUCCEEDED) {
-			/* This undocumented error code is returned probably when
-			 * PSOC4_CMD_SET_IMO48 command is not implemented.
-			 * Can be safely ignored, programming works.
-			 */
-			if (sysreq_status == PSOC4_SROM_ERR_IMO_NOT_IMPLEM)
-				LOG_INFO("PSOC4_CMD_SET_IMO48 is not implemented on this device.");
-			else {
-				LOG_ERROR("sysreq error 0x%" PRIx32, sysreq_status);
-				return ERROR_FAIL;
-			}
-		}
+	if (is_sflash_bank(bank)) {
+		bank->base = sflash_base + p4_info->row_size * 4;
+		bank->size = 4 * p4_info->row_size;
 	}
 
 	return ERROR_OK;
 }
 
-
-static int psoc4_protect_check(struct flash_bank *bank)
+/** ***********************************************************************************************
+ * @brief configures SFlash layout for PSoC4-HV parts
+ * @param bank SFlash bank to configure
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
+static int psoc4hv_decode_sflash(struct flash_bank *bank)
 {
-	struct target *target = bank->target;
-	struct psoc4_flash_bank *psoc4_info = bank->driver_priv;
+	struct psoc4_info *info = bank->driver_priv;
 
-	uint32_t prot_addr = PSOC4_SFLASH_MACRO0;
-	int retval;
-	int s = 0;
-	int m, i;
-	uint8_t bf[PSOC4_ROWS_PER_MACRO/8];
+	uint32_t sflash_area;
+	const uint32_t user_area_tbl = SFLASH_BASE_V2 + 0x40;
+	int hr = target_read_u32(bank->target, user_area_tbl + 4 * info->sflash.area_idx, &sflash_area);
+	if (hr != ERROR_OK)
+		return hr;
 
-	for (m = 0; m < psoc4_info->num_macros; m++, prot_addr += PSOC4_SFLASH_MACRO_SIZE) {
-		retval = target_read_memory(target, prot_addr, 4, PSOC4_ROWS_PER_MACRO/32, bf);
-		if (retval != ERROR_OK)
-			return retval;
+	info->sflash.chip_prot_offs = 0x7C;
+	info->sflash.siid_offs = 0x00;
+	for (size_t i = 0; i < info->num_macro; i++) {
+		const uint32_t prot_tab = SFLASH_BASE_V2 + 0x20;
+		uint16_t prot_area;
+		hr = target_read_u16(bank->target, prot_tab + 2 * i, &prot_area);
+		if (hr != ERROR_OK)
+			return hr;
+		info->sflash.row_prot_addr[i] = 0x0FFF0000 | prot_area;
+	}
 
-		for (i = 0; i < PSOC4_ROWS_PER_MACRO && s < bank->num_sectors; i++, s++)
-			bank->sectors[s].is_protected = bf[i/8] & (1 << (i%8)) ? 1 : 0;
+	if (is_sflash_bank(bank)) {
+		bank->base = 0x0FFF0000 | (sflash_area & 0x0000FFFF);
+		bank->size = sflash_area >> 16;
 	}
 
 	return ERROR_OK;
 }
 
-
-static int psoc4_mass_erase(struct flash_bank *bank)
+/** ***********************************************************************************************
+ * @brief Executes system ROM API to read silicon/family ID and protection from the device
+ * @param target current target
+ * @param p4_info pointer to structure with target-specific information
+ * @param silicon_id pointer to variable, will be populated with silicon ID
+ * @param family_id pointer to variable, will be populated with family ID
+ * @param protection pointer to variable, will be populated with protection state
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
+static int psoc4_sysreq_silicon_id(struct target *target, struct psoc4_info *p4_info, uint32_t *silicon_id,
+								   uint16_t *family_id, uint8_t *protection)
 {
-	int i;
-	int retval = psoc4_flash_prepare(bank);
-	if (retval != ERROR_OK)
-		return retval;
+	uint32_t part0, part1;
 
-	/* Call "Erase All" system ROM API */
-	uint32_t param = 0;
-	retval = psoc4_sysreq(bank, PSOC4_CMD_ERASE_ALL,
-			0,
-			&param, sizeof(param), NULL);
+	int hr = psoc4_sysreq_prepare(target, p4_info);
+	if (hr != ERROR_OK)
+		return hr;
 
-	if (retval == ERROR_OK)
-		/* set all sectors as erased */
-		for (i = 0; i < bank->num_sectors; i++)
-			bank->sectors[i].is_erased = 1;
+	hr = psoc4_sysreq(target, p4_info, PSOC4_CMD_GET_SILICON_ID, 0, NULL, 0, &part0, false);
+	if (hr != ERROR_OK)
+		goto release;
 
-	return retval;
+	const struct cpuss_type *cpuss = GET_CPUSS(p4_info);
+	hr = target_read_u32(target, cpuss->sysreq, &part1);
+	if (hr != ERROR_OK)
+		goto release;
+
+	/* build ID as Cypress sw does:
+	 * bit 31..16 silicon ID
+	 * bit 15..8  revision ID (so far 0x11 for all devices)
+	 * bit 7..0   family ID (lowest 8 bits) */
+	if (silicon_id)
+		*silicon_id = ((part0 & 0x0000ffff) << 16) | ((part0 & 0x00ff0000) >> 8) | (part1 & 0x000000ff);
+
+	if (family_id)
+		*family_id = part1 & 0x0fff;
+
+	if (protection)
+		*protection = (part1 >> 12) & 0x0f;
+
+release:
+	psoc4_sysreq_release(target, p4_info);
+	return hr;
 }
 
-
-static int psoc4_erase(struct flash_bank *bank, int first, int last)
+/** ***********************************************************************************************
+ * Rounds the 32-bit integer up to the next highest power of two, e.g.
+ * 1000 -> 1024, 1024 -> 1024, 2040 -> 2048 etc.
+ * Borrowed from the 'Bit Twiddling Hacks', see
+ * https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
+ *************************************************************************************************/
+static inline uint32_t next_pow2(uint32_t val)
 {
-	struct psoc4_flash_bank *psoc4_info = bank->driver_priv;
-	if (psoc4_info->cmd_program_row == PSOC4_CMD_WRITE_ROW) {
-		LOG_INFO("Autoerase enabled, erase command ignored");
-		return ERROR_OK;
-	}
+	assert(val != 0);
 
-	if ((first == 0) && (last == (bank->num_sectors - 1)))
-		return psoc4_mass_erase(bank);
+	val--;
+	val |= (val >> 1);
+	val |= (val >> 2);
+	val |= (val >> 4);
+	val |= (val >> 8);
+	val |= (val >> 16);
 
-	LOG_ERROR("Only mass erase available! Consider using 'psoc4 flash_autoerase 0 on'");
-
-	return ERROR_FAIL;
+	return val + 1;
 }
 
-
-static int psoc4_protect(struct flash_bank *bank, int set, int first, int last)
+/** ***********************************************************************************************
+ * @brief get_wounded_size
+ * @param bank
+ * @param max_size
+ * @return
+ *************************************************************************************************/
+static void psoc4_check_wouning(struct flash_bank *bank)
 {
-	struct target *target = bank->target;
-	struct psoc4_flash_bank *psoc4_info = bank->driver_priv;
+	const struct armv7m_common *cm = target_to_armv7m(bank->target);
+	struct psoc4_info *p4_info = bank->driver_priv;
 
-	if (!psoc4_info->probed)
-		return ERROR_FAIL;
+	/* Set initial bank size to full size, no wounding */
+	bank->size = p4_info->mflash_size;
 
-	int retval = psoc4_flash_prepare(bank);
-	if (retval != ERROR_OK)
-		return retval;
+	uint32_t dummy;
+	int hr = mem_ap_read_atomic_u32(cm->debug_ap, bank->base + p4_info->mflash_size - 4u, &dummy);
+	if (hr == ERROR_OK)
+		return;
 
-	uint32_t *sysrq_buffer = NULL;
-	const int param_sz = 8;
-	int chip_prot = PSOC4_CHIP_PROT_OPEN;
-	int i, m, sect;
-	int num_bits = bank->num_sectors;
+	/* Round initial size up to the nearest power of two */
+	uint32_t size = next_pow2(p4_info->mflash_size);
 
-	if (num_bits > PSOC4_ROWS_PER_MACRO)
-		num_bits = PSOC4_ROWS_PER_MACRO;
+	/* Round initial num_macro up to the nearest even number */
+	uint32_t num_macro = (p4_info->num_macro + 1) & ~1u;
 
-	int prot_sz = num_bits / 8;
+	do {
+		size >>= 1;
+		num_macro >>= 1;
+		hr = mem_ap_read_atomic_u32(cm->debug_ap, bank->base + size - 4u, &dummy);
+	} while (size && hr != ERROR_OK);
 
-	sysrq_buffer = malloc(param_sz + prot_sz);
-	if (sysrq_buffer == NULL) {
-		LOG_ERROR("no memory for row buffer");
-		return ERROR_FAIL;
-	}
+	/* There is at least one macro */
+	if (num_macro == 0)
+		num_macro = 1;
 
-	for (i = first; i <= last && i < bank->num_sectors; i++)
-		bank->sectors[i].is_protected = set;
+	LOG_DEBUG("%s: wounding detected (%d -> %d KiB, %d -> %d macro)", bank->name, p4_info->mflash_size / 1024u,
+			  size / 1024u, p4_info->num_macro, num_macro);
 
-	for (m = 0, sect = 0; m < psoc4_info->num_macros; m++) {
-		uint8_t *p = (uint8_t *)(sysrq_buffer + 2);
-		memset(p, 0, prot_sz);
-		for (i = 0; i < num_bits && sect < bank->num_sectors; i++, sect++) {
-			if (bank->sectors[sect].is_protected)
-				p[i/8] |= 1 << (i%8);
-		}
-
-		/* Call "Load Latch" system ROM API */
-		target_buffer_set_u32(target, (uint8_t *)(sysrq_buffer + 1),
-					prot_sz - 1);
-		retval = psoc4_sysreq(bank, PSOC4_CMD_LOAD_LATCH,
-			0	/* Byte number in latch from what to write */
-			  | (m << 8), /* flash macro index */
-			sysrq_buffer, param_sz + prot_sz,
-			NULL);
-		if (retval != ERROR_OK)
-			break;
-
-		/* Call "Write Protection" system ROM API */
-		retval = psoc4_sysreq(bank, PSOC4_CMD_WRITE_PROTECTION,
-			chip_prot | (m << 8), NULL, 0, NULL);
-		if (retval != ERROR_OK)
-			break;
-	}
-
-	if (sysrq_buffer)
-		free(sysrq_buffer);
-
-	psoc4_protect_check(bank);
-	return retval;
+	bank->size = size;
+	p4_info->num_macro = num_macro;
 }
 
-
-COMMAND_HANDLER(psoc4_handle_flash_autoerase_command)
-{
-	if (CMD_ARGC < 1)
-		return ERROR_COMMAND_SYNTAX_ERROR;
-
-	struct flash_bank *bank;
-	int retval = CALL_COMMAND_HANDLER(flash_command_get_bank, 0, &bank);
-	if (ERROR_OK != retval)
-		return retval;
-
-	struct psoc4_flash_bank *psoc4_info = bank->driver_priv;
-	bool enable = psoc4_info->cmd_program_row == PSOC4_CMD_WRITE_ROW;
-
-	if (CMD_ARGC >= 2)
-		COMMAND_PARSE_ON_OFF(CMD_ARGV[1], enable);
-
-	if (enable) {
-		psoc4_info->cmd_program_row = PSOC4_CMD_WRITE_ROW;
-		LOG_INFO("Flash auto-erase enabled, non mass erase commands will be ignored.");
-	} else {
-		psoc4_info->cmd_program_row = PSOC4_CMD_PROGRAM_ROW;
-		LOG_INFO("Flash auto-erase disabled. Use psoc mass_erase before flash programming.");
-	}
-
-	return retval;
-}
-
-
-static int psoc4_write(struct flash_bank *bank, const uint8_t *buffer,
-		uint32_t offset, uint32_t count)
-{
-	struct target *target = bank->target;
-	struct psoc4_flash_bank *psoc4_info = bank->driver_priv;
-	uint32_t *sysrq_buffer = NULL;
-	const int param_sz = 8;
-
-	int retval = psoc4_flash_prepare(bank);
-	if (retval != ERROR_OK)
-		return retval;
-
-	sysrq_buffer = malloc(param_sz + psoc4_info->row_size);
-	if (sysrq_buffer == NULL) {
-		LOG_ERROR("no memory for row buffer");
-		return ERROR_FAIL;
-	}
-
-	uint8_t *row_buffer = (uint8_t *)sysrq_buffer + param_sz;
-	uint32_t row_num = offset / psoc4_info->row_size;
-	uint32_t row_offset = offset - row_num * psoc4_info->row_size;
-	if (row_offset)
-		memset(row_buffer, bank->default_padded_value, row_offset);
-
-	bool save_poll = jtag_poll_get_enabled();
-	jtag_poll_set_enabled(false);
-
-	while (count) {
-		uint32_t chunk_size = psoc4_info->row_size - row_offset;
-		if (chunk_size > count) {
-			chunk_size = count;
-			memset(row_buffer + chunk_size, bank->default_padded_value, psoc4_info->row_size - chunk_size);
-		}
-		memcpy(row_buffer + row_offset, buffer, chunk_size);
-		LOG_DEBUG("offset / row: 0x%08" PRIx32 " / %" PRIu32 ", size %" PRIu32 "",
-				offset, row_offset, chunk_size);
-
-		uint32_t macro_idx = row_num / PSOC4_ROWS_PER_MACRO;
-
-		/* Call "Load Latch" system ROM API */
-		target_buffer_set_u32(target, (uint8_t *)(sysrq_buffer + 1),
-					psoc4_info->row_size - 1);
-		retval = psoc4_sysreq(bank, PSOC4_CMD_LOAD_LATCH,
-				0	/* Byte number in latch from what to write */
-				  | (macro_idx << 8),
-				sysrq_buffer, param_sz + psoc4_info->row_size,
-				NULL);
-		if (retval != ERROR_OK)
-			goto cleanup;
-
-		/* Call "Program Row" or "Write Row" system ROM API */
-		uint32_t sysrq_param;
-		retval = psoc4_sysreq(bank, psoc4_info->cmd_program_row,
-				row_num & 0xffff,
-				&sysrq_param, sizeof(sysrq_param),
-				NULL);
-		if (retval != ERROR_OK)
-			goto cleanup;
-
-		buffer += chunk_size;
-		row_num++;
-		row_offset = 0;
-		count -= chunk_size;
-	}
-
-cleanup:
-	jtag_poll_set_enabled(save_poll);
-
-	if (sysrq_buffer)
-		free(sysrq_buffer);
-
-	return retval;
-}
-
-
-/* Due to Cypress's method of market segmentation some devices
- * have accessible only 1/2, 1/4 or 1/8 of SPCIF described flash */
-static int psoc4_test_flash_wounding(struct target *target, uint32_t flash_size)
-{
-	int retval, i;
-	for (i = 3; i >= 1; i--) {
-		uint32_t addr = flash_size >> i;
-		uint32_t dummy;
-		retval = target_read_u32(target, addr, &dummy);
-		if (retval != ERROR_OK)
-			return i;
-	}
-	return 0;
-}
-
-
+/** ***********************************************************************************************
+ * @brief Probes the device and populates related data structures with target flash geometry
+ * data. This is done by reading ROM Table and (one of the) SPCIF.GEOMETRY register(s) describing
+ * available amount of memory.
+ * @param bank current flash bank
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
 static int psoc4_probe(struct flash_bank *bank)
 {
-	struct psoc4_flash_bank *psoc4_info = bank->driver_priv;
-	struct target *target = bank->target;
+	struct psoc4_info *p4_info = bank->driver_priv;
 
-	int retval;
-	uint16_t family_id;
+	int hr = psoc4_read_family(bank->target, bank->driver_priv);
+	if (hr != ERROR_OK)
+		return hr;
 
-	psoc4_info->probed = false;
+	hr = psoc4_read_geometry(bank->target, bank->driver_priv);
+	if (hr != ERROR_OK)
+		return hr;
 
-	retval = psoc4_get_family(target, &family_id);
-	if (retval != ERROR_OK)
-		return retval;
+	hr = is_psoc4hv(bank) ? psoc4hv_decode_sflash(bank) : psoc4_decode_sflash(bank);
+	if (hr != ERROR_OK)
+		return hr;
 
-	const struct psoc4_chip_family *family = psoc4_family_by_id(family_id);
+	if (is_flashp_bank(bank)) {
+		struct flash_bank *main_bank;
+		hr = get_flash_bank_by_addr(bank->target, 0, true, &main_bank);
+		if (hr != ERROR_OK)
+			return hr;
 
-	if (family->id == 0) {
-		LOG_ERROR("Cannot identify PSoC 4 family.");
-		return ERROR_FAIL;
-	}
-
-	if (family->flags & PSOC4_FAMILY_FLAG_LEGACY) {
-		LOG_INFO("%s legacy family detected.", family->name);
-		psoc4_info->legacy_family = true;
-		psoc4_info->cpuss_sysreq_addr = PSOC4_CPUSS_SYSREQ_LEGACY;
-		psoc4_info->cpuss_sysarg_addr = PSOC4_CPUSS_SYSARG_LEGACY;
-		psoc4_info->spcif_geometry_addr = PSOC4_SPCIF_GEOMETRY_LEGACY;
-	} else {
-		LOG_INFO("%s family detected.", family->name);
-		psoc4_info->legacy_family = false;
-		psoc4_info->cpuss_sysreq_addr = PSOC4_CPUSS_SYSREQ_NEW;
-		psoc4_info->cpuss_sysarg_addr = PSOC4_CPUSS_SYSARG_NEW;
-		psoc4_info->spcif_geometry_addr = PSOC4_SPCIF_GEOMETRY_NEW;
-	}
-
-	uint32_t spcif_geometry;
-	retval = target_read_u32(target, psoc4_info->spcif_geometry_addr, &spcif_geometry);
-	if (retval != ERROR_OK)
-		return retval;
-
-	uint32_t flash_size_in_kb = spcif_geometry & 0x3fff;
-	/* TRM of legacy, M and L version describes FLASH field as 16-bit.
-	 * S-series and PSoC Analog Coprocessor changes spec to 14-bit only.
-	 * Impose PSoC Analog Coprocessor limit to all devices as it
-	 * does not make any harm: flash size is safely below 4 MByte limit
-	 */
-	uint32_t row_size = (spcif_geometry >> 22) & 3;
-	uint32_t num_macros = (spcif_geometry >> 20) & 3;
-
-	if (psoc4_info->legacy_family) {
-		flash_size_in_kb = flash_size_in_kb * 256 / 1024;
-		row_size *= 128;
-	} else {
-		flash_size_in_kb = (flash_size_in_kb + 1) * 256 / 1024;
-		row_size = 64 * (row_size + 1);
-		num_macros++;
-	}
-
-	LOG_DEBUG("SPCIF geometry: %" PRIu32 " kb flash, row %" PRIu32 " bytes.",
-		 flash_size_in_kb, row_size);
-
-	/* if the user sets the size manually then ignore the probed value
-	 * this allows us to work around devices that have a invalid flash size register value */
-	if (psoc4_info->user_bank_size) {
-		LOG_INFO("ignoring flash probed value, using configured bank size");
-		flash_size_in_kb = psoc4_info->user_bank_size / 1024;
-	}
-
-	char macros_txt[20] = "";
-	if (num_macros > 1)
-		snprintf(macros_txt, sizeof(macros_txt), " in %" PRIu32 " macros", num_macros);
-
-	LOG_INFO("flash size = %" PRIu32 " kbytes%s", flash_size_in_kb, macros_txt);
-
-	/* calculate number of pages */
-	uint32_t num_rows = flash_size_in_kb * 1024 / row_size;
-
-	/* check number of flash macros */
-	if (num_macros != (num_rows + PSOC4_ROWS_PER_MACRO - 1) / PSOC4_ROWS_PER_MACRO)
-		LOG_WARNING("Number of macros does not correspond with flash size!");
-
-	if (!psoc4_info->legacy_family) {
-		int wounding = psoc4_test_flash_wounding(target, num_rows * row_size);
-		if (wounding > 0) {
-			flash_size_in_kb = flash_size_in_kb >> wounding;
-			num_rows = num_rows >> wounding;
-			LOG_INFO("WOUNDING detected: accessible flash size %" PRIu32 " kbytes", flash_size_in_kb);
-		}
-	}
-
-	if (bank->sectors) {
+		bank->size = main_bank->size / p4_info->row_size / 8;
 		free(bank->sectors);
+		bank->num_sectors = 1;
+		bank->sectors = alloc_block_array(0, bank->size, 1);
+	} else if (is_chipp_bank(bank)) {
+		bank->size = 1;
+		free(bank->sectors);
+		bank->num_sectors = 1;
+		bank->sectors = alloc_block_array(0, 1, 1);
+	} else {
+		if (is_mflash_bank(bank) || is_wflash_bank(bank))
+			psoc4_check_wouning(bank);
+
+		free(bank->sectors);
+		bank->num_sectors = bank->size / p4_info->row_size;
+		bank->sectors = alloc_block_array(0, p4_info->row_size, bank->size / p4_info->row_size);
+		bank->write_start_alignment = p4_info->row_size;
+		bank->write_end_alignment = p4_info->row_size;
 	}
 
-	psoc4_info->family_id = family_id;
-	psoc4_info->num_macros = num_macros;
-	psoc4_info->row_size = row_size;
-	bank->base = 0x00000000;
-	bank->size = num_rows * row_size;
-	bank->num_sectors = num_rows;
-	bank->sectors = alloc_block_array(0, row_size, num_rows);
 	if (bank->sectors == NULL)
 		return ERROR_FAIL;
 
-	LOG_DEBUG("flash bank set %" PRIu32 " rows", num_rows);
-	psoc4_info->probed = true;
+	p4_info->probed = true;
+
+	LOG_DEBUG("Flash bank '%s': %d bytes (%d rows, %d bytes/row, %d macro)", bank->name, bank->size,
+			  bank->size / p4_info->row_size, p4_info->row_size, p4_info->num_macro);
 
 	return ERROR_OK;
 }
 
+/** ***********************************************************************************************
+ * @brief Probes given flash bank only if it hasn't been probed yet
+ * @param bank current flash bank
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
 static int psoc4_auto_probe(struct flash_bank *bank)
 {
-	struct psoc4_flash_bank *psoc4_info = bank->driver_priv;
-	if (psoc4_info->probed)
+	struct psoc4_info *p4_info = bank->driver_priv;
+	if (p4_info->probed)
 		return ERROR_OK;
 	return psoc4_probe(bank);
 }
 
-
-static int get_psoc4_info(struct flash_bank *bank, char *buf, int buf_size)
+/** ***********************************************************************************************
+ * @brief reads whole row protection array and stores it in given buffer
+ * @param target current target
+ * @param prot_array pointer to buffer to write data to
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
+static int psoc4_read_row_protection(struct target *target, uint8_t **prot_array)
 {
-	struct target *target = bank->target;
-	struct psoc4_flash_bank *psoc4_info = bank->driver_priv;
+	*prot_array = NULL;
 
-	if (!psoc4_info->probed)
+	struct flash_bank *bank;
+	int hr = get_flash_bank_by_addr(target, 0, true, &bank);
+	if (hr != ERROR_OK)
+		return hr;
+
+	struct psoc4_info *p4_info = bank->driver_priv;
+
+	size_t num_prot_bytes = bank->size / p4_info->row_size / 8;
+	size_t bytes_per_macro = num_prot_bytes / p4_info->num_macro;
+	uint32_t *prot_table = p4_info->sflash.row_prot_addr;
+
+	*prot_array = malloc(num_prot_bytes);
+	if (*prot_array == NULL)
 		return ERROR_FAIL;
 
-	const struct psoc4_chip_family *family = psoc4_family_by_id(psoc4_info->family_id);
-	uint32_t size_in_kb = bank->size / 1024;
-
-	if (target->state != TARGET_HALTED) {
-		snprintf(buf, buf_size, "%s, flash %" PRIu32 " kb"
-			" (halt target to see details)", family->name, size_in_kb);
-		return ERROR_OK;
+	uint8_t *ptr = *prot_array;
+	for (size_t macro = 0; macro < p4_info->num_macro; macro++) {
+		hr = target_read_buffer(target, prot_table[macro], bytes_per_macro, ptr);
+		LOG_DEBUG("Reading prot block @0x%08" PRIx32 ", %zu bytes", prot_table[macro], bytes_per_macro);
+		if (hr != ERROR_OK) {
+			free(*prot_array);
+			*prot_array = NULL;
+			return hr;
+		}
+		ptr += bytes_per_macro;
 	}
 
-	int retval;
-	int printed = 0;
-	uint32_t silicon_id;
-	uint16_t family_id;
-	uint8_t protection;
-
-	retval = psoc4_get_silicon_id(bank, &silicon_id, &family_id, &protection);
-	if (retval != ERROR_OK)
-		return retval;
-
-	if (family_id != psoc4_info->family_id)
-		printed = snprintf(buf, buf_size, "Family id mismatch 0x%02" PRIx16
-			"/0x%02" PRIx16 ", silicon id 0x%08" PRIx32,
-			psoc4_info->family_id, family_id, silicon_id);
-	else {
-		printed = snprintf(buf, buf_size, "%s silicon id 0x%08" PRIx32 "",
-			family->name, silicon_id);
-	}
-
-	buf += printed;
-	buf_size -= printed;
-
-	const char *prot_txt = psoc4_decode_chip_protection(protection);
-	snprintf(buf, buf_size, ", flash %" PRIu32 " kb %s", size_in_kb, prot_txt);
 	return ERROR_OK;
 }
 
-
-COMMAND_HANDLER(psoc4_handle_mass_erase_command)
+/** ***********************************************************************************************
+ * @brief programs whole flash protection array stored in a given buffer
+ * @param target current target
+ * @param prot_array pointer to buffer to read data from
+ * @param chip_protect if true, function will perform chip protection
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
+static int psoc4_write_row_protection(struct target *target, uint8_t *prot_array, bool chip_protect)
 {
-	if (CMD_ARGC < 1)
-		return ERROR_COMMAND_SYNTAX_ERROR;
-
 	struct flash_bank *bank;
-	int retval = CALL_COMMAND_HANDLER(flash_command_get_bank, 0, &bank);
-	if (ERROR_OK != retval)
-		return retval;
+	int hr = get_flash_bank_by_addr(target, 0, true, &bank);
+	if (hr != ERROR_OK)
+		return hr;
 
-	retval = psoc4_mass_erase(bank);
-	if (retval == ERROR_OK)
-		command_print(CMD_CTX, "psoc mass erase complete");
-	else
-		command_print(CMD_CTX, "psoc mass erase failed");
+	struct psoc4_info *p4_minfo = bank->driver_priv;
+	size_t bytes_per_macro = bank->size / p4_minfo->row_size / p4_minfo->num_macro / 8;
+	hr = psoc4_sysreq_prepare(target, p4_minfo);
+	if (hr != ERROR_OK)
+		return hr;
 
-	return retval;
+	uint8_t req_buffer[bytes_per_macro + 4];
+	for (size_t macro = 0; macro < p4_minfo->num_macro; macro++) {
+		uint16_t load_macro = psoc4_addr_to_macro(bank, p4_minfo->sflash.row_prot_addr[macro]);
+		memcpy(&req_buffer[4], prot_array, bytes_per_macro);
+		buf_set_u32(req_buffer, 0, 32, bytes_per_macro - 1);
+		hr = psoc4_sysreq(target, p4_minfo, PSOC4_CMD_LOAD_LATCH, ((load_macro & 0x7F) << 8), req_buffer,
+						  sizeof(req_buffer), NULL, false);
+		if (hr != ERROR_OK)
+			goto release;
+
+		uint16_t protect_macro = (macro & 0x7F) << 8;
+		protect_macro |= chip_protect ? PSOC4_CHIP_PROT_PROTECTED : PSOC4_CHIP_PROT_OPEN;
+		psoc4_sysreq(target, p4_minfo, PSOC4_CMD_WRITE_PROTECTION, protect_macro, NULL, 0, NULL, false);
+		if (hr != ERROR_OK)
+			goto release;
+
+		prot_array += bytes_per_macro;
+	}
+
+release:
+	psoc4_sysreq_release(target, p4_minfo);
+	return hr;
 }
 
+/** ***********************************************************************************************
+ * @brief sector protection routine
+ * @param bank the bank to protect or unprotect
+ * @param set if non-zero, enable protection; if 0, disable it
+ * @param first the first sector to (un)protect, typically 0
+ * @param last the last sector to (un)project, typically N-1
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
+static int psoc4_protect(struct flash_bank *bank, int set, unsigned int first, unsigned int last)
+{
+	if (!is_mflash_bank(bank)) {
+		LOG_ERROR("Row Protection only supported for Main Flash");
+		return ERROR_FAIL;
+	}
+
+	struct target *target = bank->target;
+
+	uint8_t *prot_array;
+	int hr = psoc4_read_row_protection(target, &prot_array);
+	if (hr != ERROR_OK) {
+		free(prot_array);
+		return hr;
+	}
+
+	for (size_t bit = first; bit <= last; bit++) {
+		size_t byte = bit / 8;
+		size_t shift = bit % 8;
+		if (set) {
+			prot_array[byte] |= (0x01u << shift);
+		} else {
+			prot_array[byte] &= ~(0x01u << shift);
+		}
+	}
+
+	hr = psoc4_write_row_protection(target, prot_array, false);
+	free(prot_array);
+
+	return hr;
+}
+
+/** ***********************************************************************************************
+ * @brief determine if the specific bank is blank
+ * field for each of the flash sectors
+ * @param bank - the bank to check
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
+static int psoc4_blank_check(struct flash_bank *bank) {
+	if (is_chipp_bank(bank)) {
+		LOG_ERROR("Chip Protection bank does not support erase_check operation");
+		return ERROR_FLASH_OPER_UNSUPPORTED;
+	}
+
+	if (is_flashp_bank(bank)) {
+		assert(bank->num_sectors == 1);
+
+		uint8_t *flash_prot;
+		int hr = psoc4_read_row_protection(bank->target, &flash_prot);
+		if (hr != ERROR_OK)
+			return hr;
+		bank->sectors[0].is_erased = 1;
+		for (size_t i = 0; i < bank->size; i++) {
+			if (flash_prot[i]) {
+				bank->sectors[0].is_erased = 0;
+				break;
+			}
+		}
+		free(flash_prot);
+		return ERROR_OK;
+	}
+
+	return default_flash_blank_check(bank);
+}
+
+/** ***********************************************************************************************
+ * @brief determine if the specific bank is "protected" or not, populates bank.sectors.is_protected
+ * field for each of the flash sectors
+ * @param bank - the bank to check
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
+static int psoc4_protect_check(struct flash_bank *bank)
+{
+	if (!is_mflash_bank(bank)) {
+		for (size_t i = 0; i < bank->num_sectors; i++)
+			bank->sectors[i].is_protected = false;
+		return ERROR_OK;
+	}
+
+	uint8_t *prot_data;
+	int hr = psoc4_read_row_protection(bank->target, &prot_data);
+	if (hr != ERROR_OK)
+		goto exit;
+
+	for (uint32_t i = 0; i < bank->num_sectors; i++)
+		bank->sectors[i].is_protected = prot_data[i / 8] & (1 << (i % 8)) ? 1 : 0;
+
+exit:
+	free(prot_data);
+	return hr;
+}
+
+/** ***********************************************************************************************
+ * @brief performs program operation, see psoc4hv_write.c for details
+ * @param bank current flash bank
+ * @param buffer pointer to the buffer with data
+ * @param offset starting offset in flash bank
+ * @param count number of bytes in buffer
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
+#define SFLASH_PROGRAMMING_MASK 0x00000100
+static int psoc4_write_inner(struct flash_bank *bank, const uint8_t *buffer, uint32_t offset,
+							 uint32_t count, int operation)
+{
+	static const uint8_t write_algo_p4hv[] = {
+#include "../../../contrib/loaders/flash/psoc4hv/psoc4hv_write.inc"
+	};
+
+	static const uint8_t write_algo_p4[] = {
+#include "../../../contrib/loaders/flash/psoc4hv/psoc4_write.inc"
+	};
+
+	const uint8_t *write_algo_p;
+	size_t write_algo_size;
+	if (is_psoc4hv(bank)) {
+		write_algo_p = write_algo_p4hv;
+		write_algo_size = sizeof(write_algo_p4hv);
+	} else {
+		write_algo_p = write_algo_p4;
+		write_algo_size = sizeof(write_algo_p4);
+	}
+
+	struct target *target = bank->target;
+	struct psoc4_info *p4_info = bank->driver_priv;
+	const struct cpuss_type *cpuss = GET_CPUSS(p4_info);
+
+	struct working_area *wa_algo_stack;
+	int hr = target_alloc_working_area(target, write_algo_size + PSOC4_STACK_WA_SIZE, &wa_algo_stack);
+	if (hr != ERROR_OK)
+		return hr;
+
+	size_t wa_avail = target_get_working_area_avail(target);
+	/* Header - uint32_t[4], chunk - uint32_t[2] + data */
+	wa_avail -= (wa_avail - 16) % (8 + p4_info->row_size);
+	const size_t max_num_chunks = wa_avail / (8 + p4_info->row_size);
+	uint8_t chunks[wa_avail];
+
+	if (max_num_chunks == 0) {
+		LOG_ERROR("No large enough working area available");
+		hr = ERROR_FAIL;
+		goto exit0;
+	}
+
+	struct working_area *wa_buffers;
+	hr = target_alloc_working_area(target, wa_avail, &wa_buffers);
+	if (hr != ERROR_OK)
+		goto exit0;
+
+	hr = target_write_buffer(target, wa_algo_stack->address, write_algo_size, write_algo_p);
+	if (hr != ERROR_OK)
+		goto exit1;
+
+	uint32_t header[4] = {
+		cpuss->sysreq,
+		cpuss->sysarg,
+		p4_info->row_size,
+		0,
+	};
+
+	hr = target_write_buffer(target, wa_buffers->address, sizeof(header), (uint8_t *)header);
+	if (hr != ERROR_OK)
+		goto exit1;
+
+	/* Pass all parameters to the entry point (see psoc4_write.c) */
+	struct reg_param reg_params[3];
+	init_reg_param(&reg_params[0], "r0", 32, PARAM_OUT);
+	buf_set_u32(reg_params[0].value, 0, 32, wa_buffers->address);
+
+	init_reg_param(&reg_params[1], "r1", 32, PARAM_OUT);
+	buf_set_u32(reg_params[1].value, 0, 32, bank->base + offset);
+
+	init_reg_param(&reg_params[2], "sp", 32, PARAM_OUT);
+	buf_set_u32(reg_params[2].value, 0, 32, wa_algo_stack->address + wa_algo_stack->size);
+
+	/* Start the algorithm in the background */
+	struct armv7m_algorithm armv7m_algo;
+	armv7m_algo.common_magic = ARMV7M_COMMON_MAGIC;
+	armv7m_algo.core_mode = ARM_MODE_THREAD;
+	hr = target_start_algorithm(target, 0, NULL, 3, reg_params, wa_algo_stack->address, 0, &armv7m_algo);
+	if (hr != ERROR_OK)
+		goto exit2;
+
+	if (!(p4_info->family->flags & PSOC4_48MHZ_NRQ)) {
+		hr = psoc4_sysreq(target, p4_info, PSOC4_CMD_SET_IMO48, 0, NULL, 0, NULL, false);
+		if (hr != ERROR_OK)
+			goto exit3;
+	}
+
+	size_t total_chunks = count / p4_info->row_size;
+	size_t chunk_idx = 0;
+	progress_init(total_chunks, operation);
+
+	while (total_chunks) {
+		uint32_t row_id = offset / p4_info->row_size;
+
+		const uint32_t macro_id = psoc4_addr_to_macro(bank, bank->base + offset);
+		uint32_t param0 = (p4_info->flctrl_idx << 31) | (macro_id & 0x7F) << 24 | (p4_info->row_size - 1);
+		uint32_t param1 = (p4_info->flctrl_idx << 31) | (row_id & 0x7FFF) << 16 | (row_id & 0xFF);
+		if (is_sflash_bank(bank))
+			param1 |= SFLASH_PROGRAMMING_MASK;
+
+		buf_set_u32(&chunks[chunk_idx * (8 + p4_info->row_size) + 0], 0, 32, param0);
+		buf_set_u32(&chunks[chunk_idx * (8 + p4_info->row_size) + 4], 0, 32, param1);
+		memcpy(&chunks[chunk_idx * (8 + p4_info->row_size) + 8], buffer, p4_info->row_size);
+
+		chunk_idx++;
+		total_chunks--;
+		buffer += p4_info->row_size;
+		offset += p4_info->row_size;
+		if (chunk_idx == max_num_chunks || total_chunks == 0) {
+			hr = target_write_buffer(target, wa_buffers->address + 16, sizeof(chunks), chunks);
+			if (hr != ERROR_OK)
+				goto exit4;
+
+			hr = target_write_u32(target, wa_buffers->address + 12, chunk_idx);
+			if (hr != ERROR_OK)
+				goto exit4;
+
+			uint32_t status = UINT32_MAX;
+			int64_t t0 = timeval_ms();
+			while (status) {
+				if (timeval_ms() - t0 > PSOC4_IPC_TIMEOUT_MS) {
+					LOG_ERROR("Timeout waiting for flash write algorithm");
+					hr = ERROR_FLASH_OPERATION_FAILED;
+					goto exit4;
+				}
+
+				hr = target_poll(target);
+				if (hr != ERROR_OK)
+					goto exit4;
+
+				hr = target_read_u32(target, wa_buffers->address + 12, &status);
+				if (hr != ERROR_OK)
+					goto exit4;
+
+				if (status & PSOC4_SROM_STATUS_MASK || target->state != TARGET_DEBUG_RUNNING) {
+					LOG_ERROR("Flash algorithm reported failure - \"%s\"", psoc4_sysreq_errorstr(status));
+					hr = ERROR_FLASH_OPERATION_FAILED;
+					goto exit4;
+				}
+			}
+
+			chunk_idx = 0;
+		}
+
+		progress_left(total_chunks);
+	}
+
+exit4:
+	progress_done(hr);
+exit3:
+	target_halt(target);
+	target_wait_algorithm(target, 0, NULL, 0, NULL, 0, PSOC4_IPC_TIMEOUT_MS, &armv7m_algo);
+exit2:
+	for (size_t i = 0; i < sizeof(reg_params) / sizeof(reg_params[0]); i++)
+		destroy_reg_param(&reg_params[i]);
+exit1:
+	target_free_working_area(target, wa_buffers);
+exit0:
+	target_free_working_area(target, wa_algo_stack);
+	psoc4_disable_remap(target);
+	return hr;
+}
+
+static int psoc4_write(struct flash_bank *bank, const uint8_t *buffer, uint32_t offset, uint32_t count)
+{
+	if (is_flashp_bank(bank)) {
+		uint8_t *flash_prot;
+		int hr = psoc4_read_row_protection(bank->target, &flash_prot);
+		if (hr != ERROR_OK)
+			return hr;
+
+		memcpy(flash_prot + offset, buffer, count);
+
+		hr = psoc4_write_row_protection(bank->target, flash_prot, false);
+		free(flash_prot);
+		return hr;
+	}
+
+	if (is_chipp_bank(bank)) {
+		uint8_t current_prot = 0;
+		int hr = psoc4_sysreq_silicon_id(bank->target, bank->driver_priv, NULL, NULL, &current_prot);
+		if(hr != ERROR_OK)
+			return hr;
+
+		if(current_prot == *buffer)
+			return ERROR_OK;
+
+		if(current_prot == PSOC4_CHIP_PROT_PROTECTED && *buffer == PSOC4_CHIP_PROT_OPEN) {
+			LOG_ERROR("Protection 'OPEN' can not be applied while chip is in 'PROTECTED' state, "
+						"use 'psoc4 mass_erase 0' to unlock the chip");
+			return ERROR_FAIL;
+		} else if(current_prot == PSOC4_CHIP_PROT_OPEN && *buffer == PSOC4_CHIP_PROT_PROTECTED) {
+			uint8_t *row_protection;
+			hr = psoc4_read_row_protection(bank->target, &row_protection);
+			if (hr != ERROR_OK)
+				return hr;
+
+			hr = psoc4_write_row_protection(bank->target, row_protection, true);
+			if (hr == ERROR_OK)
+				LOG_INFO("Chip protection will take effect after Reset");
+
+			free(row_protection);
+			return hr;
+		} else {
+			LOG_ERROR("Transition '%s' -> '%s' is not supported", psoc4_protection_str(current_prot),
+					  psoc4_protection_str(*buffer));
+			return ERROR_FAIL;
+		}
+	}
+
+	return psoc4_write_inner(bank, buffer, offset, count, PROGRAMMING);
+}
+/** ***********************************************************************************************
+ * @brief Performs MassErase operation. This will erase ALL flash banks on PSoC4-HV!
+ * @param target current target
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
+static int psoc4_mass_erase(struct target *target) {
+	struct psoc4_info psoc4_info;
+	memset(&psoc4_info, 0, sizeof(psoc4_info));
+
+	int hr = psoc4_read_family(target, &psoc4_info);
+	if (hr != ERROR_OK)
+		return hr;
+
+	uint8_t protection = 0;
+	hr = psoc4_sysreq_silicon_id(target, &psoc4_info, NULL, NULL, &protection);
+	if (hr != ERROR_OK)
+		return hr;
+
+	hr = psoc4_sysreq_prepare(target, &psoc4_info);
+	if (hr != ERROR_OK)
+		return hr;
+
+	if (protection == PSOC4_CHIP_PROT_PROTECTED) {
+		LOG_INFO("Entering OPEN protection mode, this will erase internal Flash...");
+		hr = psoc4_sysreq(target, &psoc4_info, PSOC4_CMD_WRITE_PROTECTION, PSOC4_CHIP_PROT_OPEN, NULL, 0, NULL, false);
+		if (hr == ERROR_OK)
+			LOG_INFO("Chip protection will take effect after Reset");
+	} else {
+		LOG_INFO("Performing Mass Erase...");
+		uint8_t ram_param[4];
+		buf_set_u32(ram_param, 0, 32, 0);
+		hr = psoc4_sysreq(target, &psoc4_info, PSOC4_CMD_ERASE_ALL, 0, ram_param, sizeof(ram_param), NULL, false);
+	}
+
+	psoc4_sysreq_release(target, &psoc4_info);
+	return hr;
+}
+
+/** ***********************************************************************************************
+ * @brief Intended to perform sector erase which is not supported in PSoC4
+ * @param bank current flash bank
+ * @param first The first sector to erase
+ * @param last The last sector to erase
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
+static int psoc4_erase(struct flash_bank *bank, unsigned int first, unsigned int last)
+{
+	/* SFlash can not be erased so simply fill it with zeros */
+	if (is_sflash_bank(bank)) {
+		struct psoc4_info *info = bank->driver_priv;
+		uint8_t empty[bank->size];
+		memset(empty, 0, sizeof(empty));
+		return psoc4_write_inner(bank, empty, first * info->row_size,
+								 (last - first + 1) * info->row_size, ERASING);
+	}
+
+	if(is_flashp_bank(bank)) {
+		struct flash_bank *main_bank;
+		int hr = get_flash_bank_by_addr(bank->target, 0, true, &main_bank);
+		if (hr != ERROR_OK)
+			return hr;
+		return psoc4_protect(main_bank, false, 0, main_bank->num_sectors - 1);
+	}
+
+	if(is_chipp_bank(bank)) {
+		LOG_WARNING("Erase of Chip Protection bank is not supported, "
+					"use 'psoc4 mass_erase 0' to unlock the chip");
+		return ERROR_OK;
+	}
+
+	const bool is_p4hv = is_psoc4hv(bank);
+	if (first != 0 || last != bank->num_sectors - 1) {
+		if (!is_p4hv) {
+			LOG_WARNING("Only mass erase available, erase skipped! (psoc4 mass_erase)");
+		} else {
+			LOG_WARNING("Partial flash erase is not supported by the chip, erase skipped!");
+		}
+		return ERROR_OK;
+	}
+
+	if (!is_p4hv)
+		return psoc4_mass_erase(bank->target);
+
+	struct psoc4_info *psoc4_info = bank->driver_priv;
+	struct target *target = bank->target;
+
+	int hr = psoc4_sysreq_prepare(target, psoc4_info);
+	if (hr != ERROR_OK)
+		goto exit0;
+
+	uint32_t ctrl_idx = (psoc4_info->flctrl_idx & 0x01u);
+	uint32_t ram_param = 0x07 | (ctrl_idx << 3u);
+	uint32_t status = 0;
+	hr = psoc4_sysreq(target, psoc4_info, PSOC4_CMD_BULK_ERASE, ram_param, NULL, 0, &status, true);
+	psoc4_sysreq_release(target, psoc4_info);
+
+	if (hr != ERROR_OK && status == 0xF000000B) {
+		LOG_WARNING("Bulk-Erase API is not supported, erase skipped! Use mass erase to erase whole chip (psoc4 mass_erase)");
+		hr = ERROR_OK;
+	}
+
+exit0:
+	return hr;
+}
+
+/** ************************************************************************************************
+ * @brief display human-readable information about the target into the given buffer
+ * @param target current target
+ * @param buf - where to put the text for the human to read
+ * @param buf_size - the size of the human buffer.
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
+static int psoc4_silicon_info(struct target *target, struct command_invocation *cmd, bool use_sysreq)
+{
+	uint32_t si_siid;
+	uint32_t protection;
+
+	struct psoc4_info *p4_info = alloca(sizeof(struct psoc4_info));
+	if (!p4_info)
+		return ERROR_FAIL;
+
+	if (!use_sysreq) {
+		struct flash_bank *bank;
+		int hr = get_flash_bank_by_addr(target, 0, true, &bank);
+		if (hr != ERROR_OK)
+			return hr;
+
+		memcpy(p4_info, bank->driver_priv, sizeof(struct psoc4_info));
+
+		const uint32_t sflash_base = p4_info->family->flags & PSOC4_SFLASH_V2 ? SFLASH_BASE_V2 : SFLASH_BASE_V1;
+		hr = target_read_u32(target, sflash_base + p4_info->sflash.siid_offs, &si_siid);
+		if (hr != ERROR_OK)
+			return hr;
+
+		si_siid &= 0xFFFFu;
+
+		hr = target_read_u32(target, sflash_base + p4_info->sflash.chip_prot_offs, &protection);
+		if (hr != ERROR_OK)
+			return hr;
+
+		protection = (protection >> 24) & 0x0f;
+		if (protection == PSOC4_CHIP_PROT_VIRGIN)
+			protection = PSOC4_CHIP_PROT_OPEN;
+		else if (protection == PSOC4_CHIP_PROT_OPEN)
+			protection = PSOC4_CHIP_PROT_VIRGIN;
+
+	} else {
+		int hr = psoc4_read_family(target, p4_info);
+		if (hr != ERROR_OK)
+			return hr;
+
+		uint8_t prot;
+		hr = psoc4_sysreq_silicon_id(target, p4_info, &si_siid, NULL, &prot);
+		if (hr != ERROR_OK)
+			return hr;
+
+		si_siid >>= 16;
+		protection = prot;
+	}
+
+	const char *tcl = "source [find target/cympn.cfg]; "
+					  "set siid \"%04X\"; "
+					  "if { [dict exists $MPN $siid ] } {"
+					  "  set pn [lindex $MPN($siid) 0]; "
+					  "  set main_size [lindex $MPN($siid) 2]; "
+					  "  return [list $pn $main_size]; "
+					  "}";
+
+	char *si_mpn = NULL;
+	uint32_t udd_mflash_size = 0;
+	char *command = alloc_printf(tcl, si_siid);
+
+	extern struct command_context *global_cmd_ctx;
+	Jim_Interp *interp = global_cmd_ctx->interp;
+	Jim_Eval(interp, command);
+	Jim_Obj *list = Jim_GetResult(interp);
+	if (Jim_IsList(list) && Jim_ListLength(interp, list) == 2) {
+		si_mpn = strdup(Jim_GetString(Jim_ListGetIndex(interp, list, 0), NULL));
+		long l;
+		Jim_GetLong(interp, Jim_ListGetIndex(interp, list, 1), &l);
+		udd_mflash_size = (uint32_t)(l * 1024u);
+	}
+	free(command);
+
+	char si_rev_major = "XABCDEFGHIJKLMNOP"[p4_info->revision_id >> 4u];
+	char si_rev_minor = "X0123456789abcdef"[p4_info->revision_id & 0x0F];
+	const char *format = "*****************************************\n"
+						 "** Silicon: 0x%04X, Family: 0x%02X, Rev.: 0x%02X (%c%c)\n"
+						 "** Detected Family: %s\n"
+						 "%s"
+						 "%s"
+						 "** Chip Protection: %s\n"
+						 "*****************************************\n";
+
+	char mpn_str[80];
+	char mflash_size_str[64];
+	if (si_mpn) {
+		snprintf(mpn_str, sizeof(mpn_str), "** Detected Device: %s\n", si_mpn);
+		snprintf(mflash_size_str, sizeof(mflash_size_str), "** Detected Main Flash size, kb: %d\n",
+				 udd_mflash_size / 1024u);
+		free(si_mpn);
+	} else {
+		snprintf(mpn_str, sizeof(mpn_str), "** The connected device is not available in the device database\n");
+		snprintf(mflash_size_str, sizeof(mflash_size_str), "** Main Flash size will be auto-detected\n");
+	}
+
+	const char *family = psoc4_family_name(p4_info->family->id, si_siid);
+	command_print_sameline(cmd, format, si_siid, p4_info->family->id, p4_info->revision_id, si_rev_major,
+			si_rev_minor, family, mpn_str, mflash_size_str, psoc4_protection_str(protection));
+
+	return ERROR_OK;
+}
+
+static int psoc4_get_info(struct flash_bank *bank, struct command_invocation *cmd)
+{
+	struct target *target = bank->target;
+	struct psoc4_info *p4_info = bank->driver_priv;
+
+	if (target->state != TARGET_HALTED) {
+		command_print_sameline(cmd,
+				 "%s: target state: %s, halt the target for more information\n"
+				 "%s: %d bytes (%d rows, %d bytes/row, %d macro)",
+				 p4_info->family->name, target_state_name(target), bank->name, bank->size,
+				 bank->size / p4_info->row_size, p4_info->row_size, p4_info->num_macro);
+		return ERROR_OK;
+	}
+
+	uint32_t silicon_id;
+	uint8_t protection;
+	int hr = psoc4_sysreq_silicon_id(target, p4_info, &silicon_id, NULL, &protection);
+	if (hr != ERROR_OK)
+		return hr;
+
+	command_print_sameline(cmd,
+			 "%s: silicon id: 0x%08X, protection: %s\n"
+			 "%s: %d bytes (%d rows, %d bytes/row, %d macro)",
+			 p4_info->family->name, silicon_id, psoc4_protection_str(protection), bank->name, bank->size,
+			 bank->size / p4_info->row_size, p4_info->row_size, p4_info->num_macro);
+
+	return ERROR_OK;
+}
+
+/** ***********************************************************************************************
+ * @brief Performs Flash Read operation with ECC error reporting
+ * @param bank The bank to read
+ * @param buffer The data bytes read
+ * @param offset The offset into the chip to read
+ * @param count The number of bytes to read
+ * @return ERROR_OK in case of success, ERROR_XXX code otherwise
+ *************************************************************************************************/
+static int psoc4_flash_read(struct flash_bank *bank, uint8_t *buffer, uint32_t offset, uint32_t count)
+{
+	if (is_flashp_bank(bank)) {
+		uint8_t *flash_prot;
+		int hr = psoc4_read_row_protection(bank->target, &flash_prot);
+		if (hr != ERROR_OK)
+			return hr;
+		memcpy(buffer, flash_prot + offset, count);
+		free(flash_prot);
+		return ERROR_OK;
+	}
+
+	if (is_chipp_bank(bank)) {
+		struct psoc4_info *info = bank->driver_priv;
+		const uint32_t sflash_base = info->family->flags & PSOC4_SFLASH_V2 ? SFLASH_BASE_V2 : SFLASH_BASE_V1;
+
+		int hr = target_read_u8(bank->target, sflash_base + info->sflash.chip_prot_offs + 3, buffer);
+		if (*buffer == PSOC4_CHIP_PROT_VIRGIN)
+			*buffer = PSOC4_CHIP_PROT_OPEN;
+		else if (*buffer == PSOC4_CHIP_PROT_OPEN)
+			*buffer = PSOC4_CHIP_PROT_VIRGIN;
+
+		return hr;
+	}
+
+	if (!g_ecc_enabled)
+		return default_flash_read(bank, buffer, offset, count);
+
+	assert(offset % 4 == 0);
+	assert(count % 4 == 0);
+	int hr = target_write_u32(bank->target, FAULT_STATUS(0), 0x00);
+	if (hr != ERROR_OK)
+		return hr;
+
+	uint32_t address = bank->base + offset;
+
+	while (count) {
+		const int lvl = change_debug_level(LOG_LVL_USER);
+		target_read_buffer(bank->target, address, 4, buffer);
+		change_debug_level(lvl);
+
+		uint32_t status = 0;
+		hr = target_read_u32(bank->target, FAULT_STATUS(0), &status);
+		if (hr != ERROR_OK)
+			return hr;
+
+		if (status & FAULT_STATUS_VALID_MASK) {
+			uint32_t er_addr;
+			hr = target_read_u32(bank->target, FAULT_DATA0(0), &er_addr);
+			if (hr != ERROR_OK)
+				return hr;
+
+			LOG_WARNING("ECC Error at address 0x%08X", er_addr);
+
+			hr = target_write_u32(bank->target, FAULT_STATUS(0), 0x00);
+			if (hr != ERROR_OK)
+				return hr;
+		}
+
+		count -= 4;
+		buffer += 4;
+		address += 4;
+	}
+
+	return ERROR_OK;
+}
+
+FLASH_BANK_COMMAND_HANDLER(psoc4_flash_bank_command)
+{
+	(void)cmd;
+	bank->driver_priv = calloc(1, sizeof(struct psoc4_info));
+	if (!bank->driver_priv)
+		return ERROR_FAIL;
+
+	bank->default_padded_value = bank->erased_value = 0x00;
+
+	return ERROR_OK;
+}
+
+COMMAND_HANDLER(psoc4_handle_mass_erase)
+{
+	if (CMD_ARGC != 1)
+		return ERROR_COMMAND_SYNTAX_ERROR;
+
+	/* Chip is protected, transition to OPEN */
+	struct target *target = get_current_target(CMD_CTX);
+	if (target->coreid == 255)
+		return psoc4_mass_erase(target);
+
+	struct flash_bank *bank;
+	int hr = CALL_COMMAND_HANDLER(flash_command_get_bank, 0, &bank);
+	if (hr != ERROR_OK)
+		return hr;
+
+	if (is_sflash_bank(bank) || is_flashp_bank(bank) || is_chipp_bank(bank))
+		hr = psoc4_erase(bank, 0, bank->num_sectors - 1);
+	else
+		hr = psoc4_mass_erase(get_current_target(CMD_CTX));
+
+	command_print(CMD, hr == ERROR_OK ? "psoc mass erase complete" : "psoc mass erase failed");
+
+	return hr;
+}
+
+COMMAND_HANDLER(psoc4_handle_chip_protect)
+{
+	if (CMD_ARGC != 0)
+		return ERROR_COMMAND_SYNTAX_ERROR;
+
+	struct target *target = get_current_target(CMD_CTX);
+
+	if (target->coreid == 0xFF) {
+		LOG_ERROR("The 'chip_protect' command is not available via mem_ap");
+		return ERROR_FAIL;
+	}
+
+	struct flash_bank *mflash_bank;
+	int hr = get_flash_bank_by_addr(target, 0, true, &mflash_bank);
+	if (hr != ERROR_OK)
+		return hr;
+
+	struct psoc4_info *p4_info = mflash_bank->driver_priv;
+	uint8_t protection = 0;
+	hr = psoc4_sysreq_silicon_id(target, p4_info, NULL, NULL, &protection);
+	if (hr != ERROR_OK)
+		return hr;
+
+	if (protection != PSOC4_CHIP_PROT_OPEN) {
+		LOG_ERROR("Operation not supported when chip is in %s state", psoc4_protection_str(protection));
+		return ERROR_FAIL;
+	}
+
+	uint8_t *row_protection;
+	hr = psoc4_read_row_protection(target, &row_protection);
+	if (hr != ERROR_OK)
+		return hr;
+
+	hr = psoc4_write_row_protection(target, row_protection, true);
+	if (hr == ERROR_OK)
+		LOG_INFO("Chip protection will take effect after Reset");
+
+	free(row_protection);
+	return hr;
+}
+
+COMMAND_HANDLER(psoc4_handle_reset_halt)
+{
+	if (CMD_ARGC > 0)
+		return ERROR_COMMAND_SYNTAX_ERROR;
+
+	int hr;
+	struct target *target = get_current_target(CMD_CTX);
+
+	if (target->coreid == 0xFF) {
+		LOG_ERROR("The 'reset_halt' command is not available via mem_ap");
+		return ERROR_FAIL;
+	}
+
+	if (target->state != TARGET_HALTED) {
+		hr = target_halt(target);
+		if (hr != ERROR_OK)
+			return hr;
+
+		hr = target_wait_state(target, TARGET_HALTED, PSOC4_IPC_TIMEOUT_MS);
+		if (hr != ERROR_OK)
+			return hr;
+	}
+
+	struct flash_bank *main_flash;
+	hr = get_flash_bank_by_addr(target, 0, true, &main_flash);
+	if (hr != ERROR_OK)
+		return hr;
+
+	hr = psoc4_disable_remap(target);
+	if (hr != ERROR_OK)
+		return hr;
+
+	uint32_t reset_addr;
+	/* Read and validate Reset Vector value */
+	hr = target_read_u32(target, 0x00000004, &reset_addr);
+	if (hr != ERROR_OK)
+		return hr;
+
+	if (reset_addr > main_flash->size || reset_addr < 0x40) {
+		LOG_INFO("Entry Point address invalid (0x%08X), reset_halt skipped", reset_addr);
+		return ERROR_OK;
+	}
+
+	/* Set breakpoint at User Application entry point */
+	hr = breakpoint_add(target, reset_addr, 2, BKPT_HARD);
+	if (hr != ERROR_OK)
+		return hr;
+
+	/* Reset the CM0 by asserting SYSRESETREQ */
+	const struct armv7m_common *cm = target_to_armv7m(target);
+	LOG_INFO("%s: bkpt @0x%08X, issuing SYSRESETREQ", target->cmd_name, reset_addr);
+	mem_ap_write_atomic_u32(cm->debug_ap, NVIC_AIRCR, AIRCR_VECTKEY | AIRCR_SYSRESETREQ);
+
+	dap_invalidate_cache(cm->debug_ap->dap);
+	register_cache_invalidate(target->reg_cache);
+
+	/* Target is now in RESET */
+	target->state = TARGET_RESET;
+
+	enum log_levels lvl = change_debug_level(LOG_LVL_USER);
+	int64_t t0 = timeval_ms();
+	while ((timeval_ms() - t0) < PSOC4_IPC_TIMEOUT_MS) {
+		dap_dp_init(cm->debug_ap->dap);
+		target->examined = false;
+		hr = cortex_m_examine(target);
+		if (hr == ERROR_OK)
+			break;
+		alive_sleep(5);
+	}
+	change_debug_level(lvl);
+
+	hr = target_wait_state(target, TARGET_HALTED, PSOC4_IPC_TIMEOUT_MS);
+
+	/* Remove the break point first */
+	breakpoint_remove(target, reset_addr);
+
+	return hr;
+}
+
+COMMAND_HANDLER(psoc4_handle_silicon_info)
+{
+	if (CMD_ARGC > 1)
+		return ERROR_COMMAND_SYNTAX_ERROR;
+
+	bool use_sysreq = (CMD_ARGC == 1 && !strcmp(CMD_ARGV[0], "sysreq"));
+	return psoc4_silicon_info(get_current_target(CMD_CTX), CMD, use_sysreq);
+}
+
+struct flash_bank *psoc4_alloc_bank(struct flash_bank *main_bank, uint32_t flctrl_idx, uint32_t base,
+										const char *suffix, bool add_to_list)
+{
+	const char *p_dot = strrchr(main_bank->name, '.');
+	if (!p_dot) {
+		LOG_ERROR("Flash bank '%s' does not have a dot '.' in the name!", main_bank->name);
+		return NULL;
+	}
+
+	char *bank_name = calloc(p_dot - main_bank->name + strlen(suffix) + 2, 1);
+	if (!bank_name)
+		return NULL;
+
+	memcpy(bank_name, main_bank->name, p_dot - main_bank->name + 1);
+	strcat(bank_name, suffix);
+
+	if (get_flash_bank_by_name_noprobe(bank_name)) {
+		free(bank_name);
+		return NULL;
+	}
+
+	struct flash_bank *new_bank = calloc(sizeof(struct flash_bank), 1);
+	if (!new_bank) {
+		free(bank_name);
+		return NULL;
+	}
+
+	struct psoc4_info *info = calloc(sizeof(struct psoc4_info), 1);
+	if (!info) {
+		free(new_bank);
+		free(bank_name);
+		return NULL;
+	}
+
+	info->flctrl_idx = flctrl_idx;
+	new_bank->driver_priv = info;
+	new_bank->driver = main_bank->driver;
+	new_bank->target = main_bank->target;
+	new_bank->name = bank_name;
+	new_bank->base = base;
+	new_bank->write_start_alignment = new_bank->write_end_alignment = FLASH_WRITE_ALIGN_SECTOR;
+	new_bank->minimal_write_gap = FLASH_WRITE_GAP_SECTOR;
+	new_bank->bus_width = new_bank->chip_width = 4;
+	new_bank->default_padded_value = new_bank->erased_value = 0x00;
+	new_bank->is_memory_mapped = true;
+
+	if (add_to_list)
+		flash_bank_add(new_bank);
+
+	return new_bank;
+}
+
+static int maybe_add_sflash_bank(struct flash_bank *bank, const char *name, uint32_t area_idx)
+{
+	struct target *target = bank->target;
+	int hr = ERROR_OK;
+
+	struct flash_bank *sflash_bank = NULL;
+	sflash_bank = psoc4_alloc_bank(bank, 0, 0x0FFFF000, name, false);
+	if (sflash_bank) {
+		struct psoc4_info *info = sflash_bank->driver_priv;
+		hr = psoc4_read_family(target, info);
+		if (hr != ERROR_OK)
+			goto free_sflash;
+
+		hr = psoc4_read_geometry(target, info);
+		if (hr != ERROR_OK)
+			goto free_sflash;
+
+		info->sflash.area_idx = area_idx;
+		hr = is_psoc4hv(bank) ? psoc4hv_decode_sflash(sflash_bank) : psoc4_decode_sflash(sflash_bank);
+		if (hr != ERROR_OK)
+			goto free_sflash;
+
+		if (sflash_bank->size)
+			flash_bank_add(sflash_bank);
+		else
+			goto free_sflash;
+	}
+
+	return ERROR_OK;
+
+free_sflash:
+	free(sflash_bank->driver_priv);
+	free(sflash_bank->name);
+	free(sflash_bank);
+	return hr;
+}
+
+COMMAND_HANDLER(psoc4_handle_add_flash_banks)
+{
+	if (CMD_ARGC)
+		return ERROR_COMMAND_SYNTAX_ERROR;
+
+	struct target *target = get_current_target(CMD_CTX);
+
+	struct flash_bank *bank;
+	int hr = get_flash_bank_by_addr(target, 0, true, &bank);
+	if (hr != ERROR_OK)
+		return hr;
+
+	struct psoc4_info p4_info;
+	hr = psoc4_read_family(target, &p4_info);
+	if (hr != ERROR_OK)
+		return hr;
+
+	/* PSoC4-HV: Check if FlashController #1 is present, add WorkFlash if so */
+	if (is_psoc4hv(bank)) {
+		p4_info.flctrl_idx = 1;
+		hr = psoc4_read_geometry(target, &p4_info);
+		if (hr == ERROR_OK)
+			psoc4_alloc_bank(bank, 1, 0x1F000000, "wflash", true);
+	}
+
+	/* Devices with row size = 64b does not have SFlash */
+	struct psoc4_info *main_info = bank->driver_priv;
+
+	/* SFlash is not available or occupied by TRIMS on some parts */
+	if (main_info->row_size > 64 && !(main_info->family->flags & PSOC4_NO_SFLASH)) {
+
+		/* Add SupervisoryFlash #0 */
+		hr = maybe_add_sflash_bank(bank, "sflash", 0);
+		if (hr != ERROR_OK)
+			return hr;
+
+		/* PSoC4-HV: Check for SupervisoryFlash #1 */
+		if (is_psoc4hv(bank)) {
+			hr = maybe_add_sflash_bank(bank, "sflash1", 1);
+			if (hr != ERROR_OK)
+				return hr;
+		}
+	}
+
+	struct flash_bank *b;
+	b = psoc4_alloc_bank(bank, 0, BANK_FLASHP_ADDR_MASKED, "flash_prot", true);
+	b->is_memory_mapped = false;
+	b = psoc4_alloc_bank(bank, 0, BANK_CHIPP_ADDR_MASKED, "chip_prot", true);
+	b->is_memory_mapped = false;
+
+	return hr;
+}
+
+COMMAND_HANDLER(psoc4_handle_ecc_error_reporting)
+{
+	if (CMD_ARGC != 1)
+		return ERROR_COMMAND_SYNTAX_ERROR;
+
+	COMMAND_PARSE_ON_OFF(CMD_ARGV[0], g_ecc_enabled);
+
+	struct target *target = get_current_target(CMD_CTX);
+
+	/* Disable FAULT[1] */
+	int hr = target_write_u32(target, FAULT_CTL(1), 0);
+	if (hr != ERROR_OK)
+		return hr;
+
+	hr = target_write_u32(target, FAULT_MASK0(1), 0);
+	if (hr != ERROR_OK)
+		return hr;
+
+	/* Configure FAULT[0] */
+	hr = target_write_u32(target, FAULT_CTL(0), 0);
+	if (hr != ERROR_OK)
+		return hr;
+
+	const uint32_t fault_mask0 = g_ecc_enabled ? FAULT_ENABLE_ECC_MASK : 0;
+	hr = target_write_u32(target, FAULT_MASK0(0), fault_mask0);
+	if (hr != ERROR_OK)
+		return hr;
+
+	LOG_INFO("ECC error reporting is now %s", g_ecc_enabled ? "Enabled" : "Disabled");
+	return ERROR_OK;
+}
+
+COMMAND_HANDLER(psoc4_handle_disable_cpu_read_relocations_command)
+{
+	if (CMD_ARGC != 0)
+		return ERROR_COMMAND_SYNTAX_ERROR;
+
+	return psoc4_disable_remap(get_current_target(CMD_CTX));
+}
 
 static const struct command_registration psoc4_exec_command_handlers[] = {
 	{
 		.name = "mass_erase",
-		.handler = psoc4_handle_mass_erase_command,
+		.handler = psoc4_handle_mass_erase,
 		.mode = COMMAND_EXEC,
-		.usage = "bank_id",
-		.help = "Erase entire flash device.",
+		.usage = "",
+		.help = "Erases all flash banks and/or unlocks the chip",
 	},
 	{
-		.name = "flash_autoerase",
-		.handler = psoc4_handle_flash_autoerase_command,
+		.name = "chip_protect",
+		.handler = psoc4_handle_chip_protect,
 		.mode = COMMAND_EXEC,
-		.usage = "bank_id on|off",
-		.help = "Set autoerase mode for flash bank.",
+		.usage = "",
+		.help = "Moves the part to PROTECTED state",
 	},
-	COMMAND_REGISTRATION_DONE
+	{
+		.name = "reset_halt",
+		.handler = psoc4_handle_reset_halt,
+		.mode = COMMAND_EXEC,
+		.usage = "",
+		.help = "Tries to simulate broken Vector Catch",
+	},
+	{
+		.name = "silicon_info",
+		.handler = psoc4_handle_silicon_info,
+		.mode = COMMAND_EXEC,
+		.usage = "[sysreq]",
+		.help = "Prints detailed info about the connected silicon",
+	},
+	{
+		.name = "add_flash_banks",
+		.handler = psoc4_handle_add_flash_banks,
+		.mode = COMMAND_EXEC,
+		.usage = "",
+		.help = "",
+	},
+	{
+		.name = "ecc_error_reporting",
+		.handler = psoc4_handle_ecc_error_reporting,
+		.mode = COMMAND_EXEC,
+		.usage = "on|off",
+		.help = "Controls ECC error reporting",
+	},
+	{
+		.name = "disable_cpu_read_relocations",
+		.handler = psoc4_handle_disable_cpu_read_relocations_command,
+		.mode = COMMAND_EXEC,
+		.usage = "",
+		.help = "Disables Reset Vector fetch relocation",
+	},
+	COMMAND_REGISTRATION_DONE,
 };
 
 static const struct command_registration psoc4_command_handlers[] = {
@@ -947,7 +2039,7 @@ static const struct command_registration psoc4_command_handlers[] = {
 		.usage = "",
 		.chain = psoc4_exec_command_handlers,
 	},
-	COMMAND_REGISTRATION_DONE
+	COMMAND_REGISTRATION_DONE,
 };
 
 const struct flash_driver psoc4_flash = {
@@ -957,11 +2049,11 @@ const struct flash_driver psoc4_flash = {
 	.erase = psoc4_erase,
 	.protect = psoc4_protect,
 	.write = psoc4_write,
-	.read = default_flash_read,
+	.read = psoc4_flash_read,
 	.probe = psoc4_probe,
 	.auto_probe = psoc4_auto_probe,
-	.erase_check = default_flash_blank_check,
+	.erase_check = psoc4_blank_check,
 	.protect_check = psoc4_protect_check,
-	.info = get_psoc4_info,
+	.info = psoc4_get_info,
 	.free_driver_priv = default_flash_free_driver_priv,
 };
