@@ -1,6 +1,6 @@
 # Infineon's fork of OpenOCD
 
-This project came from Infineon's customized [cenocd](https://github.com/Infineon/modustoolbox-software/issues/5)
+This project came from Infineon's customized [openocd](https://github.com/Infineon/modustoolbox-software/issues/5)
 
 
 ## Usage
